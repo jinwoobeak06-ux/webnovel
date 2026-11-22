@@ -32,6 +32,13 @@ service cloud.firestore {
       );
       allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
 
+      // 글 속 이미지: 누구나 보기, 작가만 넣기
+      match /images/{iid} {
+        allow read: if true;
+        allow write: if signedIn()
+          && get(/databases/$(database)/documents/novels/$(nid)).data.authorId == request.auth.uid;
+      }
+
       // 회차 본문: 누구나 읽기, 작가만 쓰기
       match /episodes/{eid} {
         allow read: if true;

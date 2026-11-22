@@ -201,6 +201,23 @@ h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
 .wf{display:flex;align-items:center;gap:12px;border-top:1px solid var(--line);padding-top:14px;flex-wrap:wrap}
 .wf .btn-text{margin-left:auto}
 
+/* in-episode images */
+.wtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.wtools .btn-soft{padding:8px 14px;font-size:14px;cursor:pointer}
+.wtools .btn-soft[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.wtools .cm{flex-basis:100%;font-size:12px}
+.wprev{min-height:40vh;max-width:700px}
+.wimgs{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px;margin-top:8px}
+.wimgs .cm{flex-basis:100%;font-size:12px}
+.wimg{position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;background:var(--soft)}
+.wimg img{width:100%;height:100%;object-fit:cover}
+.wimg button{position:absolute;left:0;right:0;bottom:0;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:3px 0}
+.epbody .prose+.toon,.wprev .prose+.toon{margin-top:28px}
+.epbody .toon+.prose,.wprev .toon+.prose{margin-top:28px}
+.toon{display:block;width:100%;height:auto;margin:0}
+.toon:not([src]){min-height:260px;background:var(--soft)}
+.toon.broken{min-height:80px}
+
 /* auth tabs, cover buttons */
 [hidden]{display:none!important}
 .tabs{display:flex;background:var(--soft);border-radius:999px;padding:4px;margin-bottom:24px}
@@ -400,7 +417,10 @@ async function makeFirebaseAPI(){
     createNovel:(id,data)=>setDoc(doc(db,"novels",id),data),
     updateNovel:(id,data)=>updateDoc(doc(db,"novels",id),data),
     updateNovels:async(ids,data)=>{if(!ids.length)return;const b=writeBatch(db);ids.forEach(id=>b.update(doc(db,"novels",id),data));await b.commit();},
-    deleteNovel:async(id,eids)=>{const b=writeBatch(db);eids.forEach(e=>b.delete(doc(db,"novels",id,"episodes",e)));b.delete(doc(db,"novels",id));await b.commit();},
+    deleteNovel:async(id,eids)=>{const b=writeBatch(db);eids.forEach(e=>b.delete(doc(db,"novels",id,"episodes",e)));
+      try{const im=await F.getDocs(collection(db,"novels",id,"images"));im.forEach(d=>b.delete(d.ref));}catch(e){}b.delete(doc(db,"novels",id));await b.commit();},
+    saveImage:(nid,iid,src)=>setDoc(doc(db,"novels",nid,"images",iid),{src,createdAt:Date.now()}),
+    getImage:async(nid,iid)=>{const d=await getDoc(doc(db,"novels",nid,"images",iid));return d.exists()?d.data():null;},
     getEpisode:async(nid,eid)=>{const d=await getDoc(doc(db,"novels",nid,"episodes",eid));return d.exists()?d.data():null;},
     saveEpisode:async(nid,eid,ep,upd)=>{const b=writeBatch(db);b.set(doc(db,"novels",nid,"episodes",eid),ep);b.update(doc(db,"novels",nid),upd);await b.commit();},
     deleteEpisode:async(nid,eid,upd)=>{const b=writeBatch(db);b.delete(doc(db,"novels",nid,"episodes",eid));b.update(doc(db,"novels",nid),upd);await b.commit();},
@@ -446,7 +466,9 @@ function makeLocalAPI(){
     createNovel:async(id,data)=>{await kv.put("novel:"+id,data);changed();},
     updateNovel:async(id,data)=>{await updNovel(id,data);changed();},
     updateNovels:async(ids,data)=>{for(const id of ids)await updNovel(id,data);changed();},
-    deleteNovel:async(id,eids)=>{for(const e of eids)await kv.del("ep:"+id+":"+e);await kv.del("novel:"+id);changed();},
+    deleteNovel:async(id,eids)=>{for(const e of eids)await kv.del("ep:"+id+":"+e);for(const [k] of await kv.all("img:"+id+":"))await kv.del(k);await kv.del("novel:"+id);changed();},
+    saveImage:(nid,iid,src)=>kv.put("img:"+nid+":"+iid,{src,createdAt:Date.now()}),
+    getImage:(nid,iid)=>kv.get("img:"+nid+":"+iid),
     getEpisode:(nid,eid)=>kv.get("ep:"+nid+":"+eid),
     saveEpisode:async(nid,eid,ep,upd)=>{await kv.put("ep:"+nid+":"+eid,ep);await updNovel(nid,upd);changed();},
     deleteEpisode:async(nid,eid,upd)=>{await kv.del("ep:"+nid+":"+eid);await updNovel(nid,upd);changed();},
@@ -454,6 +476,37 @@ function makeLocalAPI(){
       if(on){if(await kv.get(k))return;await kv.put(k,{uid,nid,createdAt:Date.now()});v.heartCount=(Number(v.heartCount)||0)+1;}
       else{if(!await kv.get(k))return;await kv.del(k);v.heartCount=Math.max(0,(Number(v.heartCount)||0)-1);}
       await kv.put("novel:"+nid,v);changed();}};}
+
+/* ---------- 글 속 이미지 (웹툰처럼) ----------
+   본문 안의 [[그림:아이디]] 줄이 이미지 자리예요. 이미지는 따로 저장되고, 긴 이미지는 자동으로 잘라 이어 붙여요. */
+const IMG_RE=/^\[\[그림:([a-z0-9]{4,40})\]\]$/;
+const imgCache={};
+function imgIds(body){return String(body||"").split("\n").map(l=>l.trim().match(IMG_RE)).filter(Boolean).map(m=>m[1]);}
+function bodyHtml(body){const out=[];let buf=[];
+  const flush=()=>{const t=buf.join("\n").replace(/^\s*\n|\n\s*$/g,"");if(t.trim())out.push(`<div class="prose">${esc(t)}</div>`);buf=[];};
+  String(body||"").split("\n").forEach(l=>{const m=l.trim().match(IMG_RE);if(m){flush();out.push(`<img class="toon" data-iid="${m[1]}" alt="">`);}else buf.push(l);});flush();
+  return out.join("");}
+async function getImg(nid,iid){if(imgCache[iid])return imgCache[iid];try{const r=await API.getImage(nid,iid);const src=r&&safeImg(r.src);if(src)imgCache[iid]=src;return src||"";}catch(e){return "";}}
+function hydrateImgs(root,nid){if(!nid)return;root.querySelectorAll("img[data-iid]:not([src])").forEach(async im=>{const src=await getImg(nid,im.dataset.iid);
+  if(src)im.src=src;else{im.classList.add("broken");im.alt="이미지를 불러오지 못했어요";}});}
+function loadImgEl(url){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url;});}
+function sliceCanvas(src,maxW,sliceH){const sw=src.naturalWidth||src.width,sh=src.naturalHeight||src.height,sc=Math.min(1,maxW/sw),w=Math.round(sw*sc),h=Math.round(sh*sc),out=[];
+  for(let y=0;y<h;y+=sliceH){const ph=Math.min(sliceH,h-y),c=document.createElement("canvas");c.width=w;c.height=ph;const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,w,ph);x.drawImage(src,0,-y,w,h);out.push(c);}
+  return out;}
+async function storeSlices(nid,canvases){const ids=[];for(const c of canvases){const iid=genId(),src=c.toDataURL("image/jpeg",0.84);await API.saveImage(nid,iid,src);imgCache[iid]=src;ids.push(iid);}return ids;}
+function captureWriter(){const e=S.epDraft;if(!e)return;const b=$("#epBody"),t=$("#epTitle");if(b){e.body=b.value;e.caret=b.selectionStart;}if(t)e.title=t.value;}
+function insertTokens(ids){const e=S.epDraft;if(!e||!ids.length)return;const body=e.body||"",at=Math.min(e.caret==null?body.length:e.caret,body.length);
+  const before=body.slice(0,at),after=body.slice(at),tok=ids.map(i=>`[[그림:${i}]]`).join("\n");
+  e.body=before+(before&&!before.endsWith("\n")?"\n":"")+tok+"\n"+(after.startsWith("\n")?after.slice(1):after);
+  e.caret=(before+(before&&!before.endsWith("\n")?"\n":"")+tok+"\n").length;e.preview=false;
+  lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body}));render();
+  const b=$("#epBody");if(b){b.focus({preventScroll:true});b.setSelectionRange(e.caret,e.caret);}}
+async function addEpImages(files){const e=S.epDraft;if(!e)return;captureWriter();const list=[...files].filter(f=>/^image\//.test(f.type));if(!list.length){toast("이미지 파일만 넣을 수 있어요.");return;}
+  toast("이미지 넣는 중…");const ids=[];
+  try{for(const f of list){const url=URL.createObjectURL(f);try{const im=await loadImgEl(url);ids.push(...await storeSlices(e.id,sliceCanvas(im,900,1600)));}finally{URL.revokeObjectURL(url);}}
+    insertTokens(ids);toast(`이미지 ${list.length}장을 넣었어요.`);}catch(err){if(ids.length)insertTokens(ids);toast(errMsg(err));}}
+function removeEpImage(iid){const e=S.epDraft;if(!e)return;captureWriter();e.body=String(e.body||"").split("\n").filter(l=>{const m=l.trim().match(IMG_RE);return !(m&&m[1]===iid);}).join("\n");
+  lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body}));render();toast("이미지를 뺐어요.");}
 
 /* ---------- views ---------- */
 function vHome(){
@@ -501,14 +554,18 @@ function vWriter(n,w){if(w.state==="loading")return `<section class="writer" id=
   const no=w.eid?(n.eps.find(x=>x.id===w.eid)||{}).no:n.epCount+1;
   return `<section class="writer" id="writer"><form data-form="ep" novalidate>
    <div class="wh"><span class="wno">${no}화</span><input id="epTitle" maxlength="60" value="${esc(w.title||"")}" placeholder="제목 (안 적어도 돼요)" aria-label="${no}화 제목"></div>
-   <textarea id="epBody" maxlength="60000" placeholder="여기에 ${no}화 이야기를 써 주세요." aria-label="${no}화 본문">${esc(w.body||"")}</textarea>
+   <div class="wtools"><label class="btn-soft" for="epImg">이미지 넣기</label><input id="epImg" class="sr" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
+    <button class="btn-soft" type="button" data-act="epdraw">그려서 넣기</button><button class="btn-soft" type="button" data-act="eppreview" aria-pressed="${!!w.preview}">${w.preview?"쓰기로 돌아가기":"미리보기"}</button>
+    <span class="cm">이미지는 넣고 싶을 때만 넣으면 돼요. 커서가 있는 자리에 웹툰처럼 크게 들어가요.</span></div>
+   ${w.preview?`<div class="wprev">${bodyHtml(w.body)||`<div class="empty">아직 쓴 내용이 없어요.</div>`}</div>`:`<textarea id="epBody" maxlength="200000" placeholder="여기에 ${no}화 이야기를 써 주세요." aria-label="${no}화 본문">${esc(w.body||"")}</textarea>`}
+   ${imgIds(w.body).length?`<div class="wimgs"><span class="cm">넣은 이미지 ${imgIds(w.body).length}장</span>${imgIds(w.body).map(i=>`<div class="wimg"><img data-iid="${i}" alt=""><button type="button" data-act="epimgdel" data-iid="${i}" aria-label="이 이미지 빼기">빼기</button></div>`).join("")}</div>`:""}
    <div class="wf"><span class="cc" id="cc">${fmtN((w.body||"").length)}자</span><span class="cm" id="autosave">쓰는 내용은 이 기기에 자동으로 임시 저장돼요</span>
     <button class="btn-text" type="button" data-act="closewriter">닫기</button><button class="btn" type="submit" id="saveEp">${w.eid?`${no}화 저장`:`${no}화 올리기`}</button></div>
   </form></section>`;}
 
 function vReader(){const n=findNovel(S.view.id);if(!n)return notFound();const i=n.eps.findIndex(e=>e.id===S.view.eid);const ep=n.eps[i];if(!ep)return notFound("회차를 찾을 수 없어요");
   const prev=n.eps[i-1],next=n.eps[i+1],mine=n.aid===S.uid,r=S.read||{};
-  const body=r.state==="ok"?`<div class="prose">${esc(String(r.body||""))}</div>`:r.state==="loading"?`<div class="empty">본문을 불러오는 중이에요…</div>`:`<div class="empty">본문을 불러오지 못했어요.</div>`;
+  const body=r.state==="ok"?`<div class="epbody">${bodyHtml(r.body)}</div>`:r.state==="loading"?`<div class="empty">본문을 불러오는 중이에요…</div>`:`<div class="empty">본문을 불러오지 못했어요.</div>`;
   return `<article class="reader"><div class="rbar"><button class="btn-soft" type="button" data-act="open" data-id="${esc(n.id)}">← 회차 목록</button>
    <div class="row">${mine?`<button class="btn-text" type="button" data-act="editep" data-id="${esc(n.id)}" data-eid="${esc(ep.id)}">수정</button><button class="btn-text" type="button" data-act="delep" data-id="${esc(n.id)}" data-eid="${esc(ep.id)}">삭제</button>`:""}
    <div class="fs" role="group" aria-label="글자 크기"><button type="button" data-act="fs-" aria-label="글자 작게">가−</button><button type="button" data-act="fs+" aria-label="글자 크게">가+</button></div></div></div>
@@ -557,6 +614,7 @@ function renderHeader(){const a=$("#authSlot");
   document.querySelectorAll("[data-nav]").forEach(b=>b.setAttribute("aria-current",String(b.dataset.nav===S.view.name)));}
 function render(){renderHeader();
   const v=S.view.name;const map={home:vHome,search:vSearch,novel:vNovel,reader:vReader,write:vWrite,ep:vEp,library:vLibrary};
+  setTimeout(()=>hydrateImgs(app,S.view.id),0);
   app.innerHTML=(map[v]||vHome)()+`<footer class="foot">먹과종이 · 회차가 1개 이상인 작품만 추천 목록에 올라가요.${API&&!API.online?"<br>지금은 설치 없이 쓰는 모드라 작품·계정이 이 브라우저에 저장돼요.":""}</footer>`;}
 function patchHearts(){const all=allNovels(),m={};all.forEach(n=>m[n.id]=n.hearts);
   document.querySelectorAll("[data-hc]").forEach(el=>el.textContent=fmtN(m[el.dataset.hc]||0));
@@ -623,7 +681,7 @@ async function submitNovel(){if(S.busy)return;const d=S.draft||{};
   catch(e){toast(errMsg(e));btn.disabled=false;btn.textContent=d.id?"저장":"작품 등록";}finally{S.busy=false;}}
 
 async function submitEp(){if(S.busy)return;const e=S.epDraft||{},n=findNovel(e.id);if(!n)return;
-  const title=$("#epTitle").value.trim(),body=$("#epBody").value;if(!body.trim()){toast("본문을 입력해 주세요.");$("#epBody").focus();return;}
+  captureWriter();const title=String(e.title||"").trim(),body=String(e.body||"");if(!body.trim()){toast("본문을 입력해 주세요.");if($("#epBody"))$("#epBody").focus();return;}
   S.busy=true;const btn=$("#saveEp");btn.disabled=true;btn.textContent="저장 중…";
   try{const now=Date.now(),eid=e.eid||genId(),first=n.epCount===0&&!e.eid;
     const raw=(S.novels[n.id].episodes||[]).filter(x=>x&&x.id).map(x=>({id:x.id,title:String(x.title||""),at:Number(x.at)||now}));
@@ -671,6 +729,10 @@ function handle(a,id,eid,t){
    case "signup":authModal("signup");break;
    case "draw":openPainter();break;
    case "closewriter":S.epDraft=null;render();break;
+   case "eppreview":if(!S.epDraft)return;captureWriter();S.epDraft.preview=!S.epDraft.preview;render();break;
+   case "epimgdel":removeEpImage(t.dataset.iid);break;
+   case "epdraw":{if(!S.epDraft)return;captureWriter();const nid=S.epDraft.id;
+     openPainter(async cv=>{try{const ids=await storeSlices(nid,sliceCanvas(cv,900,1600));insertTokens(ids);toast("그린 그림을 넣었어요.");}catch(err){toast(errMsg(err));}});break;}
    case "account":accountModal();break;
    case "editpen":penModal();break;
    case "logout":closeModal();Promise.resolve(API.signOut()).then(()=>toast("로그아웃했어요."));break;
@@ -696,7 +758,8 @@ document.addEventListener("submit",ev=>{const f=ev.target.closest("[data-form]")
   else if(k==="pen"){const v=$("#pen").value.trim().slice(0,16);if(!v){toast("필명을 입력해 주세요.");return;}savePen(v);}
   else if(k==="login"||k==="signup")doAuth(k==="signup");
   else if(k==="novel")submitNovel();else if(k==="ep")submitEp();});
-document.addEventListener("change",async ev=>{if(ev.target.id!=="cover"&&ev.target.id!=="cover2")return;const file=ev.target.files&&ev.target.files[0];if(!file)return;
+document.addEventListener("change",async ev=>{if(ev.target.id==="epImg"){const f=ev.target.files;if(f&&f.length)await addEpImages(f);ev.target.value="";return;}
+  if(ev.target.id!=="cover"&&ev.target.id!=="cover2")return;const file=ev.target.files&&ev.target.files[0];if(!file)return;
   if(!/^image\/(png|jpeg|webp)$/.test(file.type)){toast("PNG, JPG, WEBP 이미지만 쓸 수 있어요.");return;}
   try{const url=await makeCover(file);const d=S.draft||(S.draft={});Object.assign(d,{title:$("#title").value,genre:$("#genre").value,synopsis:$("#syn").value,preview:url});render();}
   catch(e){toast("이미지를 읽지 못했어요. 다른 파일을 골라 주세요.");}});
@@ -734,7 +797,7 @@ const FREE=new Set(["brush","pencil","marker","air","callig","eraser"]),SHAPE=ne
 let pm,po,mctx,octx,sprayT=null,ro=null;
 
 function painterHtml(title){
-  return `<header class="pt-top"><b>표지 그리기</b>
+  return `<header class="pt-top"><b>${P.onDone?"글에 넣을 그림 그리기":"표지 그리기"}</b>
    <div class="pt-hist"><button type="button" data-pt="undo" id="ptUndo" title="되돌리기 (Ctrl+Z)">↶ 되돌리기</button><button type="button" data-pt="redo" id="ptRedo" title="다시하기 (Ctrl+Y)">다시하기 ↷</button></div>
    <div class="row"><button class="btn-soft" type="button" data-pt="cancel">취소</button><button class="btn" type="button" data-pt="done">완료</button></div></header>
   <div class="pt-body">
@@ -764,10 +827,10 @@ function painterHtml(title){
     <section class="pt-help">단축키 · B 붓 · P 연필 · M 마커 · A 에어브러시 · C 캘리펜 · E 지우개 · G 채우기 · I 스포이드 · L 직선 · R 사각형 · O 원 · D 그라데이션 · T 글자 · [ ] 굵기 · X 색 바꾸기 · Ctrl+Z 되돌리기</section>
    </aside></div>`;}
 
-function openPainter(){const d=S.draft||(S.draft={});const ti=$("#title");
+function openPainter(onDone){P.onDone=typeof onDone==="function"?onDone:null;const d=P.onDone?{}:(S.draft||(S.draft={}));const ti=P.onDone?null:$("#title");
   if(ti){d.title=ti.value;d.genre=$("#genre").value;d.synopsis=$("#syn").value;}
   P.undo=[];P.redo=[];P.down=false;
-  const root=document.createElement("div");root.id="painter";root.className="pt";root.setAttribute("role","dialog");root.setAttribute("aria-label","표지 그리기");
+  const root=document.createElement("div");root.id="painter";root.className="pt";root.setAttribute("role","dialog");root.setAttribute("aria-label",P.onDone?"그림 그리기":"표지 그리기");
   root.innerHTML=painterHtml(d.title||"");document.body.appendChild(root);document.body.style.overflow="hidden";
   pm=$("#ptMain");po=$("#ptOver");mctx=pm.getContext("2d",{willReadFrequently:true});octx=po.getContext("2d");
   if(d.preview){const im=new Image();im.onload=()=>mctx.drawImage(im,0,0,PW,PH);im.src=d.preview;}
@@ -936,6 +999,7 @@ async function ptAction(a){
   else if(a==="flip"){snap();const t=document.createElement("canvas");t.width=PW;t.height=PH;t.getContext("2d").drawImage(pm,0,0);mctx.clearRect(0,0,PW,PH);mctx.save();mctx.translate(PW,0);mctx.scale(-1,1);mctx.drawImage(t,0,0);mctx.restore();}
   else if(a==="clear"){snap();mctx.clearRect(0,0,PW,PH);toast("전부 지웠어요. 되돌리기로 살릴 수 있어요.");}
   else if(a==="cancel"){if(P.undo.length&&!await ask("그린 내용을 버리고 닫을까요?","버리기"))return;closePainter();}
+  else if(a==="done"&&P.onDone){const cb=P.onDone,c=document.createElement("canvas");c.width=PW;c.height=PH;const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,PW,PH);x.drawImage(pm,0,0);P.onDone=null;closePainter();cb(c);}
   else if(a==="done"){const c=document.createElement("canvas");c.width=360;c.height=504;const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,360,504);x.drawImage(pm,0,0,360,504);
     S.draft=S.draft||{};S.draft.preview=c.toDataURL("image/jpeg",0.86);closePainter();render();toast("표지를 넣었어요.");}}
 function ptKey(e){if(!$("#painter")||$("#modal").innerHTML)return;const tg=e.target,typing=/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName)&&!["range","checkbox","color"].includes(tg.type),mod=e.ctrlKey||e.metaKey,k=e.key.toLowerCase();
