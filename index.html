@@ -731,7 +731,7 @@ function openPainter(){const d=S.draft||(S.draft={});const ti=$("#title");
   pm=$("#ptMain");po=$("#ptOver");mctx=pm.getContext("2d",{willReadFrequently:true});octx=po.getContext("2d");
   if(d.preview){const im=new Image();im.onload=()=>mctx.drawImage(im,0,0,PW,PH);im.src=d.preview;}
   bindPainter();ptSync();fitWrap();
-  if(document.fonts)FONTS.forEach(f=>document.fonts.load(`40px "${f[0]}"`).catch(()=>{}));}
+  if(document.fonts){const t=(d.title||"")+"가나다라마바사아자차카타파하ABC";FONTS.forEach(f=>document.fonts.load(`40px "${f[0]}"`,t).catch(()=>{}));}}
 function closePainter(){clearInterval(sprayT);if(ro){ro.disconnect();ro=null;}document.removeEventListener("keydown",ptKey);const r=$("#painter");if(r)r.remove();document.body.style.overflow="";}
 function fitWrap(){const st=$("#ptStage"),w=$("#ptWrap");if(!st||!w)return;const pad=24,sw=st.clientWidth-pad*2,sh=st.clientHeight-pad*2;
   const h=Math.max(100,Math.min(sh,sw*PH/PW));w.style.height=h+"px";w.style.width=(h*PW/PH)+"px";}
@@ -749,7 +749,8 @@ function bindPainter(){const root=$("#painter");
   on("ptAlpha","input",e=>{P.alpha=+e.target.value;ptSync();});
   on("ptTol","input",e=>{P.tol=+e.target.value;ptSync();});
   on("ptFsize","input",e=>{P.fsize=+e.target.value;ptSync();});
-  on("ptFont","change",e=>{P.font=e.target.value;if(document.fonts)document.fonts.load(`40px "${P.font}"`).catch(()=>{});});
+  on("ptFont","change",e=>{P.font=e.target.value;ensureFont();});
+  on("ptText","input",()=>ensureFont());
   on("ptHollow","change",e=>P.hollow=e.target.checked);
   on("ptGClear","change",e=>P.gclear=e.target.checked);
   on("ptOutline","change",e=>P.outline=e.target.checked);
@@ -836,7 +837,8 @@ const fontStr=()=>`${P.fsize}px "${P.font}", "Pretendard Variable", sans-serif`;
 function drawText(ctx,p){const t=(($("#ptText")||{}).value||"");if(!t.trim())return;ctx.save();ctx.font=fontStr();ctx.textAlign="center";ctx.textBaseline="middle";
   const lines=t.split("\n"),lh=P.fsize*1.15,y0=p.y-(lines.length-1)*lh/2;
   lines.forEach((l,i)=>{const y=y0+i*lh;if(P.outline){ctx.lineJoin="round";ctx.lineWidth=Math.max(2,P.fsize*0.12);ctx.strokeStyle=P.c2;ctx.strokeText(l,p.x,y);}ctx.fillStyle=P.c1;ctx.fillText(l,p.x,y);});ctx.restore();}
-function stampText(p){if(!$("#ptText").value.trim()){toast("넣을 글자를 먼저 적어 주세요.");$("#ptText").focus();return;}octx.clearRect(0,0,PW,PH);drawText(octx,p);commit();addRecent(P.c1);}
+function ensureFont(){const t=(($("#ptText")||{}).value||"")+"가나다ABC";return document.fonts?document.fonts.load(fontStr(),t).catch(()=>{}):Promise.resolve();}
+async function stampText(p){if(!$("#ptText").value.trim()){toast("넣을 글자를 먼저 적어 주세요.");$("#ptText").focus();return;}await ensureFont();octx.clearRect(0,0,PW,PH);drawText(octx,p);commit();addRecent(P.c1);}
 
 /* fill & picker */
 function flood(x,y){if(x<0||y<0||x>=PW||y>=PH)return;const img=mctx.getImageData(0,0,PW,PH),d=img.data,i0=(y*PW+x)*4,t=[d[i0],d[i0+1],d[i0+2],d[i0+3]];
@@ -903,7 +905,6 @@ function ptKey(e){if(!$("#painter")||$("#modal").innerHTML)return;const tg=e.tar
   if(k==="x"){ptAction("swap");return;}
   const t=TOOLS.find(t=>t[2]===k);if(t)ptTool(t[0]);}
 
-window.mjOpenPainter=openPainter; /* 표지 그리기 창 테스트용 */
 /* ---------- boot ---------- */
 let API=null;
 render();
