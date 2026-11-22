@@ -561,7 +561,7 @@ function render(){renderHeader();
 function patchHearts(){const all=allNovels(),m={};all.forEach(n=>m[n.id]=n.hearts);
   document.querySelectorAll("[data-hc]").forEach(el=>el.textContent=fmtN(m[el.dataset.hc]||0));
   document.querySelectorAll("[data-hb]").forEach(el=>{const on=liked(el.dataset.hb);el.setAttribute("aria-pressed",String(on));const s=el.querySelector("[data-hl]");if(s)s.textContent=on?"하트 취소":"하트";});}
-function softRender(){if(["write","ep","reader"].includes(S.view.name)||(S.view.name==="novel"&&S.epDraft&&S.epDraft.id===S.view.id)){renderHeader();patchHearts();return;}render();}
+function softRender(){if(["write","ep","reader"].includes(S.view.name)||(S.view.name==="novel"&&S.epDraft&&S.epDraft.id===S.view.id&&$("#writer"))){renderHeader();patchHearts();return;}render();}
 function go(v){if(!(v.name==="novel"&&S.epDraft&&S.epDraft.id===v.id))S.epDraft=null;S.view=v;window.scrollTo(0,0);render();}
 
 /* ---------- modal ---------- */
@@ -618,7 +618,7 @@ async function submitNovel(){if(S.busy)return;const d=S.draft||{};
   S.busy=true;const btn=$("#saveNovel");btn.disabled=true;btn.textContent="저장 중…";
   try{const now=Date.now();let id=d.id;
     if(id)await API.updateNovel(id,{title,genre,synopsis,cover:d.preview,penName:S.pen});
-    else{id=API.newId();await API.createNovel(id,{authorId:S.uid,penName:S.pen,title,genre,synopsis,cover:d.preview,episodes:[],episodeCount:0,heartCount:0,createdAt:now,updatedAt:now});}
+    else{id=API.newId();const nd={authorId:S.uid,penName:S.pen,title,genre,synopsis,cover:d.preview,episodes:[],episodeCount:0,heartCount:0,createdAt:now,updatedAt:now};await API.createNovel(id,nd);S.novels[id]=Object.assign({},nd,S.novels[id]||{});}
     S.draft=null;if(d.id){toast("작품 정보를 저장했어요.");go({name:"novel",id});}else{toast("작품을 등록했어요. 바로 1화를 써 보세요!");openEpEditor(id,null);}}
   catch(e){toast(errMsg(e));btn.disabled=false;btn.textContent=d.id?"저장":"작품 등록";}finally{S.busy=false;}}
 
