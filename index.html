@@ -225,7 +225,13 @@ h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
 #ptC1{left:0;top:0;z-index:2}#ptC2{left:28px;top:20px}
 .pt-cc button{position:absolute;right:0;top:-2px;border:0;background:none;font-size:14px;color:var(--sub);padding:2px}
 .pt-colrow .hex{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;text-transform:uppercase}
-.pt-pal{display:grid;grid-template-columns:repeat(10,1fr);gap:5px}
+.pt-pal{display:grid;grid-template-columns:repeat(12,1fr);gap:4px}
+.cp{display:flex;flex-direction:column;gap:8px;margin-bottom:4px}
+.cp canvas{width:100%;border-radius:10px;cursor:crosshair;touch-action:none;display:block}
+#cpSV{aspect-ratio:256/160}#cpH{height:16px;border-radius:999px}
+.cp-rgb{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.cp-rgb label{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--sub)}
+.cp-rgb input{width:100%;border:1.5px solid transparent;background:var(--soft);border-radius:8px;padding:6px 8px;font-variant-numeric:tabular-nums}
 .pt-pal button{aspect-ratio:1;border-radius:6px;border:1px solid var(--line);padding:0}
 .pt-pal button:hover{transform:scale(1.12)}
 .pt-sub{font-size:12px;color:var(--sub);margin:10px 0 6px}
@@ -282,7 +288,8 @@ h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
 
 <script type="module">
 /* ================================================================
-   ① Firebase 설정 — Firebase 콘솔에서 복사한 값으로 아래를 바꿔 넣으세요.
+   (선택) Firebase 설정 — 비워 두면 설치 없이 이 브라우저에 저장되는 모드로 작동해요.
+   여러 사람이 같은 작품을 보게 하려면 Firebase 값을 넣으세요.
    ================================================================ */
 const FIREBASE_CONFIG = {
   apiKey: "여기에_apiKey",
@@ -294,9 +301,6 @@ const FIREBASE_CONFIG = {
 };
 /* ================================================================ */
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, onSnapshot, query, where, limit, writeBatch, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const GENRES=["판타지","현대판타지","로맨스","로맨스판타지","무협","미스터리·스릴러","공포","SF","드라마","기타"];
 const WEEK=7*864e5;
@@ -327,6 +331,7 @@ function errMsg(e){const c=String(e&&e.code||"");
   if(c.includes("too-many-requests"))return "시도가 너무 많아요. 잠시 후 다시 해 주세요.";
   if(c.includes("operation-not-allowed"))return "Firebase에서 이메일/비밀번호 로그인을 켜 주세요.";
   if(c.includes("unavailable")||c.includes("network"))return "인터넷 연결을 확인해 주세요.";
+  if(c.includes("quota")||String(e&&e.name).includes("Quota"))return "이 브라우저 저장 공간이 가득 찼어요.";
   return "문제가 생겼어요. 잠시 후 다시 시도해 주세요.";}
 
 /* ---------- 흑백 반전 & 글자 크기 ---------- */
@@ -352,13 +357,84 @@ const card=(n,rank)=>`<button class="card" type="button" data-act="open" data-id
   <div class="cs"><span>${esc(n.genre)}</span><span>·</span><span>${n.epCount?n.epCount+"화":"연재 준비 중"}</span><span class="hc">♥ <span data-hc="${esc(n.id)}">${fmtN(n.hearts)}</span></span></div></button>`;
 const heartBtn=n=>{const on=liked(n.id);return `<button class="heart" type="button" data-act="heart" data-id="${esc(n.id)}" data-hb="${esc(n.id)}" aria-pressed="${on}">${HEART}<span data-hl>${on?"하트 취소":"하트"}</span><span data-hc="${esc(n.id)}">${fmtN(n.hearts)}</span></button>`;};
 
-/* ---------- views ---------- */
-function vSetup(){return `<div class="setup"><h1>Firebase 연결이 필요해요</h1>
- <p>로그인과 작품 저장을 위해 index.html 위쪽 <code>FIREBASE_CONFIG</code>에 내 Firebase 값을 넣어 주세요.</p>
- <ol><li>console.firebase.google.com 에서 프로젝트 만들기</li><li>Authentication → 로그인 방법 → <b>이메일/비밀번호</b> 사용 설정 (사이트에서는 아이디·비밀번호만 써요)</li>
- <li>Firestore Database 만들기 → 규칙 탭에 함께 받은 <code>firestore.rules</code> 내용 붙여넣고 게시</li>
- <li>프로젝트 설정 → 웹 앱 추가 → 나오는 firebaseConfig 값을 index.html에 붙여넣기</li></ol></div>`;}
+/* ---------- 저장소 ----------
+   FIREBASE_CONFIG를 채우면 온라인(모든 사람이 같이 보는) 저장소를 쓰고,
+   비워 두면 설치·설정 없이 이 브라우저 안(IndexedDB)에 저장하는 체험 모드로 바로 작동해요. */
+const FB_V="10.12.2";
+async function makeFirebaseAPI(){
+  const [{initializeApp},A,F]=await Promise.all([import(`https://www.gstatic.com/firebasejs/${FB_V}/firebase-app.js`),import(`https://www.gstatic.com/firebasejs/${FB_V}/firebase-auth.js`),import(`https://www.gstatic.com/firebasejs/${FB_V}/firebase-firestore.js`)]);
+  const app=initializeApp(FIREBASE_CONFIG),auth=A.getAuth(app),db=F.getFirestore(app);
+  const {doc,collection,getDoc,setDoc,updateDoc,onSnapshot,query,where,limit,writeBatch,increment}=F;
+  return {online:true,
+    newId:()=>doc(collection(db,"novels")).id,
+    onAuth:cb=>A.onAuthStateChanged(auth,u=>cb(u?{uid:u.uid,loginId:(u.email||"").split("@")[0]}:null)),
+    signUp:async(id,pw)=>(await A.createUserWithEmailAndPassword(auth,idMail(id),pw)).user.uid,
+    signIn:async(id,pw)=>{await A.signInWithEmailAndPassword(auth,idMail(id),pw);},
+    signOut:()=>A.signOut(auth),
+    getUser:async uid=>{const d=await getDoc(doc(db,"users",uid));return d.exists()?d.data():null;},
+    setUser:(uid,data)=>setDoc(doc(db,"users",uid),data),
+    watchNovels:(cb,err)=>onSnapshot(query(collection(db,"novels"),limit(500)),s=>{const m={};s.forEach(d=>m[d.id]=d.data());cb(m);},err),
+    watchWeek:cb=>onSnapshot(query(collection(db,"hearts"),where("createdAt",">=",Date.now()-WEEK)),s=>{const w={};s.forEach(d=>{const n=d.data().nid;if(n)w[n]=(w[n]||0)+1;});cb(w);},()=>{}),
+    watchMine:(uid,cb)=>onSnapshot(query(collection(db,"hearts"),where("uid","==",uid)),s=>{const set=new Set();s.forEach(d=>set.add(d.data().nid));cb(set);},()=>{}),
+    createNovel:(id,data)=>setDoc(doc(db,"novels",id),data),
+    updateNovel:(id,data)=>updateDoc(doc(db,"novels",id),data),
+    updateNovels:async(ids,data)=>{if(!ids.length)return;const b=writeBatch(db);ids.forEach(id=>b.update(doc(db,"novels",id),data));await b.commit();},
+    deleteNovel:async(id,eids)=>{const b=writeBatch(db);eids.forEach(e=>b.delete(doc(db,"novels",id,"episodes",e)));b.delete(doc(db,"novels",id));await b.commit();},
+    getEpisode:async(nid,eid)=>{const d=await getDoc(doc(db,"novels",nid,"episodes",eid));return d.exists()?d.data():null;},
+    saveEpisode:async(nid,eid,ep,upd)=>{const b=writeBatch(db);b.set(doc(db,"novels",nid,"episodes",eid),ep);b.update(doc(db,"novels",nid),upd);await b.commit();},
+    deleteEpisode:async(nid,eid,upd)=>{const b=writeBatch(db);b.delete(doc(db,"novels",nid,"episodes",eid));b.update(doc(db,"novels",nid),upd);await b.commit();},
+    heart:async(uid,nid,on)=>{const b=writeBatch(db),hid=uid+"_"+nid;
+      if(on){b.set(doc(db,"hearts",hid),{uid,nid,createdAt:Date.now()});b.update(doc(db,"novels",nid),{heartCount:increment(1)});}
+      else{b.delete(doc(db,"hearts",hid));b.update(doc(db,"novels",nid),{heartCount:increment(-1)});}await b.commit();}};}
 
+function makeLocalAPI(){
+  /* IndexedDB 키-값 저장소 (안 되면 메모리) */
+  let kv;
+  const idbOpen=new Promise(res=>{try{const r=indexedDB.open("mukgwajongi",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");r.onsuccess=()=>res(r.result);r.onerror=()=>res(null);}catch(e){res(null);}});
+  const req=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+  const mem=new Map();
+  kv={get:async k=>{const d=await idbOpen;return d?req(d.transaction("kv").objectStore("kv").get(k)):mem.get(k);},
+      put:async(k,v)=>{const d=await idbOpen;if(!d){mem.set(k,v);return;}const t=d.transaction("kv","readwrite");t.objectStore("kv").put(v,k);await new Promise((res,rej)=>{t.oncomplete=res;t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error||{code:"quota"});});},
+      del:async k=>{const d=await idbOpen;if(!d){mem.delete(k);return;}const t=d.transaction("kv","readwrite");t.objectStore("kv").delete(k);await new Promise((res,rej)=>{t.oncomplete=res;t.onerror=()=>rej(t.error);});},
+      all:async pre=>{const d=await idbOpen;if(!d)return [...mem].filter(([k])=>k.startsWith(pre));const s=d.transaction("kv").objectStore("kv"),rg=IDBKeyRange.bound(pre,pre+"￿");const [ks,vs]=await Promise.all([req(s.getAllKeys(rg)),req(s.getAll(rg))]);return ks.map((k,i)=>[k,vs[i]]);}};
+  const L={novels:new Set(),week:new Set(),mine:new Set()};let authCb=null;
+  const bc=("BroadcastChannel" in window)?new BroadcastChannel("mukgwajongi"):null;
+  async function emit(){const ns=await kv.all("novel:"),hs=await kv.all("heart:"),m={},w={},now=Date.now();
+    ns.forEach(([k,v])=>m[k.slice(6)]=v);hs.forEach(([,v])=>{if(now-v.createdAt<WEEK)w[v.nid]=(w[v.nid]||0)+1;});
+    L.novels.forEach(cb=>cb(m));L.week.forEach(cb=>cb(w));L.mine.forEach(x=>{const s=new Set();hs.forEach(([,v])=>{if(v.uid===x.uid)s.add(v.nid);});x.cb(s);});}
+  const changed=()=>{emit();if(bc)bc.postMessage(1);};
+  if(bc)bc.onmessage=()=>emit();
+  async function hashPw(pw,salt){if(!(window.crypto&&crypto.subtle)){let h=0;for(const c of salt+pw)h=(h*31+c.charCodeAt(0))|0;return "s"+h;}
+    const k=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveBits"]);
+    const b=await crypto.subtle.deriveBits({name:"PBKDF2",salt:new TextEncoder().encode(salt),iterations:100000,hash:"SHA-256"},k,256);
+    return btoa(String.fromCharCode(...new Uint8Array(b)));}
+  const sess=()=>{try{return JSON.parse(localStorage.getItem("mj_session")||"null");}catch(e){return null;}};
+  const setSess=v=>{lsSet("mj_session",v?JSON.stringify(v):null);if(authCb)authCb(v);};
+  const updNovel=async(id,data)=>{const v=await kv.get("novel:"+id);if(!v)throw {code:"not-found"};Object.assign(v,data);await kv.put("novel:"+id,v);};
+  return {online:false,newId:genId,
+    onAuth:cb=>{authCb=cb;setTimeout(()=>cb(sess()),0);window.addEventListener("storage",e=>{if(e.key==="mj_session")cb(sess());});},
+    signUp:async(id,pw)=>{if(await kv.get("acct:"+id))throw {code:"auth/email-already-in-use"};const uid="u"+genId(),salt=genId();
+      await kv.put("acct:"+id,{uid,salt,hash:await hashPw(pw,salt)});setSess({uid,loginId:id});return uid;},
+    signIn:async(id,pw)=>{const a=await kv.get("acct:"+id);if(!a||a.hash!==await hashPw(pw,a.salt))throw {code:"auth/invalid-credential"};setSess({uid:a.uid,loginId:id});},
+    signOut:async()=>setSess(null),
+    getUser:uid=>kv.get("user:"+uid),
+    setUser:(uid,data)=>kv.put("user:"+uid,data),
+    watchNovels:(cb,err)=>{L.novels.add(cb);emit().catch(err);return ()=>L.novels.delete(cb);},
+    watchWeek:cb=>{L.week.add(cb);emit().catch(()=>{});return ()=>L.week.delete(cb);},
+    watchMine:(uid,cb)=>{const x={uid,cb};L.mine.add(x);emit().catch(()=>{});return ()=>L.mine.delete(x);},
+    createNovel:async(id,data)=>{await kv.put("novel:"+id,data);changed();},
+    updateNovel:async(id,data)=>{await updNovel(id,data);changed();},
+    updateNovels:async(ids,data)=>{for(const id of ids)await updNovel(id,data);changed();},
+    deleteNovel:async(id,eids)=>{for(const e of eids)await kv.del("ep:"+id+":"+e);await kv.del("novel:"+id);changed();},
+    getEpisode:(nid,eid)=>kv.get("ep:"+nid+":"+eid),
+    saveEpisode:async(nid,eid,ep,upd)=>{await kv.put("ep:"+nid+":"+eid,ep);await updNovel(nid,upd);changed();},
+    deleteEpisode:async(nid,eid,upd)=>{await kv.del("ep:"+nid+":"+eid);await updNovel(nid,upd);changed();},
+    heart:async(uid,nid,on)=>{const k="heart:"+uid+"_"+nid,v=await kv.get("novel:"+nid);if(!v)throw {code:"not-found"};
+      if(on){if(await kv.get(k))return;await kv.put(k,{uid,nid,createdAt:Date.now()});v.heartCount=(Number(v.heartCount)||0)+1;}
+      else{if(!await kv.get(k))return;await kv.del(k);v.heartCount=Math.max(0,(Number(v.heartCount)||0)-1);}
+      await kv.put("novel:"+nid,v);changed();}};}
+
+/* ---------- views ---------- */
 function vHome(){
   if(!S.loaded)return `<div class="sec"><div class="empty">${S.err?"작품을 불러오지 못했어요. 새로고침해 주세요.":"작품을 불러오는 중이에요…"}</div></div>`;
   const all=allNovels(),f=n=>S.genre==="전체"||n.genre===S.genre;
@@ -447,13 +523,13 @@ const notFound=m=>`<div class="sec"><div class="empty"><h3>${esc(m||"작품을 �
 
 /* ---------- render ---------- */
 function renderHeader(){const a=$("#authSlot");
-  if(!CONFIGURED||!S.authReady){a.innerHTML="";}
+  if(!S.authReady){a.innerHTML="";}
   else if(S.uid){a.innerHTML=`<button class="me" type="button" data-act="account"><span class="av">${esc((S.pen||"나").slice(0,1))}</span><span>${esc(S.pen||"필명 정하기")}</span></button>`;}
   else a.innerHTML=`<button class="btn-text" type="button" data-act="login">로그인</button><button class="btn" type="button" data-act="signup">회원가입</button>`;
   document.querySelectorAll("[data-nav]").forEach(b=>b.setAttribute("aria-current",String(b.dataset.nav===S.view.name)));}
-function render(){renderHeader();if(!CONFIGURED){app.innerHTML=vSetup();return;}
+function render(){renderHeader();
   const v=S.view.name;const map={home:vHome,search:vSearch,novel:vNovel,reader:vReader,write:vWrite,ep:vEp,library:vLibrary};
-  app.innerHTML=(map[v]||vHome)()+`<footer class="foot">먹과종이 · 회차가 1개 이상인 작품만 추천 목록에 올라가요.</footer>`;}
+  app.innerHTML=(map[v]||vHome)()+`<footer class="foot">먹과종이 · 회차가 1개 이상인 작품만 추천 목록에 올라가요.${API&&!API.online?"<br>지금은 설치 없이 쓰는 모드라 작품·계정이 이 브라우저에 저장돼요.":""}</footer>`;}
 function patchHearts(){const all=allNovels(),m={};all.forEach(n=>m[n.id]=n.hearts);
   document.querySelectorAll("[data-hc]").forEach(el=>el.textContent=fmtN(m[el.dataset.hc]||0));
   document.querySelectorAll("[data-hb]").forEach(el=>{const on=liked(el.dataset.hb);el.setAttribute("aria-pressed",String(on));const s=el.querySelector("[data-hl]");if(s)s.textContent=on?"하트 취소":"하트";});}
@@ -488,9 +564,9 @@ async function doAuth(su){const id=$("#lid").value.trim().toLowerCase(),pw=$("#l
   if(pw.length<6){toast("비밀번호는 6자 이상이어야 해요.");$("#lpw").focus();return;}
   let pen="";if(su){if(pw!==$("#lpw2").value){toast("비밀번호 확인이 달라요.");$("#lpw2").focus();return;}pen=($("#lpen").value.trim()||id).slice(0,16);}
   btn.disabled=true;
-  try{if(su){S.signingUp=true;const cr=await createUserWithEmailAndPassword(S.auth,idMail(id),pw);
-      await setDoc(doc(S.db,"users",cr.user.uid),{loginId:id,penName:pen,createdAt:Date.now()});S.pen=pen;S.loginId=id;S.signingUp=false;closeModal();toast(pen+"님, 가입을 환영해요!");render();runAfter();}
-    else{await signInWithEmailAndPassword(S.auth,idMail(id),pw);closeModal();toast("로그인했어요.");}}
+  try{if(su){S.signingUp=true;const uid=await API.signUp(id,pw);
+      await API.setUser(uid,{loginId:id,penName:pen,createdAt:Date.now()});S.pen=pen;S.loginId=id;S.signingUp=false;closeModal();toast(pen+"님, 가입을 환영해요!");render();runAfter();}
+    else{await API.signIn(id,pw);closeModal();toast("로그인했어요.");}}
   catch(e){S.signingUp=false;toast(errMsg(e));btn.disabled=false;}}
 function needLogin(after){if(!S.uid){S.after=after||null;authModal("login");return false;}if(!S.pen){S.after=after||null;penModal();return false;}return true;}
 function runAfter(){const a=S.after;S.after=null;if(!a)return;handle(a.act,a.id,a.eid);}
@@ -504,10 +580,8 @@ async function makeCover(file){const url=URL.createObjectURL(file);
 
 async function toggleHeart(id){if(!needLogin({act:"heart",id}))return;const n=findNovel(id);if(!n)return;
   if(n.aid===S.uid){toast("내 작품에는 하트를 줄 수 없어요.");return;}
-  const was=liked(id),hid=S.uid+"_"+id,b=writeBatch(S.db);
-  if(was){b.delete(doc(S.db,"hearts",hid));b.update(doc(S.db,"novels",id),{heartCount:increment(-1)});}
-  else{b.set(doc(S.db,"hearts",hid),{uid:S.uid,nid:id,createdAt:Date.now()});b.update(doc(S.db,"novels",id),{heartCount:increment(1)});}
-  try{await b.commit();if(!was)toast("하트를 보냈어요. 인기 순위에 반영돼요.");}catch(e){toast(errMsg(e));}}
+  const was=liked(id);
+  try{await API.heart(S.uid,id,!was);if(!was)toast("하트를 보냈어요. 인기 순위에 반영돼요.");}catch(e){toast(errMsg(e));}}
 
 async function submitNovel(){if(S.busy)return;const d=S.draft||{};
   const title=$("#title").value.trim(),genre=$("#genre").value,synopsis=$("#syn").value.trim();Object.assign(d,{title,genre,synopsis});
@@ -515,8 +589,8 @@ async function submitNovel(){if(S.busy)return;const d=S.draft||{};
   if(!d.preview){toast("표지 이미지를 등록해 주세요.");return;}
   S.busy=true;const btn=$("#saveNovel");btn.disabled=true;btn.textContent="저장 중…";
   try{const now=Date.now();let id=d.id;
-    if(id)await updateDoc(doc(S.db,"novels",id),{title,genre,synopsis,cover:d.preview,penName:S.pen});
-    else{id=doc(collection(S.db,"novels")).id;await setDoc(doc(S.db,"novels",id),{authorId:S.uid,penName:S.pen,title,genre,synopsis,cover:d.preview,episodes:[],episodeCount:0,heartCount:0,createdAt:now,updatedAt:now});}
+    if(id)await API.updateNovel(id,{title,genre,synopsis,cover:d.preview,penName:S.pen});
+    else{id=API.newId();await API.createNovel(id,{authorId:S.uid,penName:S.pen,title,genre,synopsis,cover:d.preview,episodes:[],episodeCount:0,heartCount:0,createdAt:now,updatedAt:now});}
     toast(d.id?"작품 정보를 저장했어요.":"작품을 등록했어요. 이제 1화를 올려 보세요!");S.draft=null;go({name:"novel",id});}
   catch(e){toast(errMsg(e));btn.disabled=false;btn.textContent=d.id?"저장":"작품 등록";}finally{S.busy=false;}}
 
@@ -526,30 +600,28 @@ async function submitEp(){if(S.busy)return;const e=S.epDraft||{},n=findNovel(e.i
   try{const now=Date.now(),eid=e.eid||genId(),first=n.epCount===0&&!e.eid;
     const raw=(S.novels[n.id].episodes||[]).filter(x=>x&&x.id).map(x=>({id:x.id,title:String(x.title||""),at:Number(x.at)||now}));
     const i=raw.findIndex(x=>x.id===eid);if(i>=0)raw[i].title=title;else raw.push({id:eid,title,at:now});
-    const b=writeBatch(S.db);
-    b.set(doc(S.db,"novels",n.id,"episodes",eid),{title,body,createdAt:e.createdAt||now,updatedAt:now});
-    const upd={episodes:raw,episodeCount:raw.length};if(i<0)upd.updatedAt=now;b.update(doc(S.db,"novels",n.id),upd);
-    await b.commit();S.novels[n.id]=Object.assign({},S.novels[n.id],upd);
+    const upd={episodes:raw,episodeCount:raw.length};if(i<0)upd.updatedAt=now;
+    await API.saveEpisode(n.id,eid,{title,body,createdAt:e.createdAt||now,updatedAt:now},upd);S.novels[n.id]=Object.assign({},S.novels[n.id],upd);
     toast(first?"첫 회차가 올라갔어요! 이제 추천 목록에 노출돼요.":e.eid?"회차를 저장했어요.":"회차를 등록했어요.");S.epDraft=null;openReader(n.id,eid);}
   catch(err){toast(errMsg(err));btn.disabled=false;btn.textContent=e.eid?"저장":"회차 등록";}finally{S.busy=false;}}
 
 async function delEp(id,eid){if(!await ask("이 회차를 삭제할까요? 되돌릴 수 없어요.","삭제"))return;
-  try{const raw=(S.novels[id].episodes||[]).filter(x=>x&&x.id&&x.id!==eid);const b=writeBatch(S.db);
-    b.delete(doc(S.db,"novels",id,"episodes",eid));b.update(doc(S.db,"novels",id),{episodes:raw,episodeCount:raw.length});await b.commit();toast("회차를 삭제했어요.");go({name:"novel",id});}
+  try{const raw=(S.novels[id].episodes||[]).filter(x=>x&&x.id&&x.id!==eid);
+    await API.deleteEpisode(id,eid,{episodes:raw,episodeCount:raw.length});toast("회차를 삭제했어요.");go({name:"novel",id});}
   catch(e){toast(errMsg(e));}}
 async function delNovel(id){const n=findNovel(id);if(!n)return;if(!await ask(`‘${n.title}’ 작품과 회차 ${n.epCount}개를 모두 삭제할까요? 되돌릴 수 없어요.`,"전부 삭제"))return;
-  try{const b=writeBatch(S.db);n.eps.forEach(e=>b.delete(doc(S.db,"novels",id,"episodes",e.id)));b.delete(doc(S.db,"novels",id));await b.commit();S.draft=null;toast("작품을 삭제했어요.");go({name:"library"});}
+  try{await API.deleteNovel(id,n.eps.map(e=>e.id));S.draft=null;toast("작품을 삭제했어요.");go({name:"library"});}
   catch(e){toast(errMsg(e));}}
-async function savePen(v){try{await setDoc(doc(S.db,"users",S.uid),{loginId:S.loginId||"",penName:v,updatedAt:Date.now()});S.pen=v;
-    const mine=allNovels().filter(n=>n.aid===S.uid);if(mine.length){const b=writeBatch(S.db);mine.forEach(n=>b.update(doc(S.db,"novels",n.id),{penName:v}));await b.commit();}
+async function savePen(v){try{await API.setUser(S.uid,{loginId:S.loginId||"",penName:v,updatedAt:Date.now()});S.pen=v;
+    await API.updateNovels(allNovels().filter(n=>n.aid===S.uid).map(n=>n.id),{penName:v});
     closeModal();toast("필명을 저장했어요.");softRender();runAfter();}catch(e){toast(errMsg(e));}}
 
 async function openReader(id,eid){S.view={name:"reader",id,eid};S.read={eid,state:"loading"};window.scrollTo(0,0);render();
-  try{const d=await getDoc(doc(S.db,"novels",id,"episodes",eid));if(!S.read||S.read.eid!==eid)return;S.read=d.exists()?{eid,state:"ok",body:d.data().body}:{eid,state:"missing"};}
+  try{const d=await API.getEpisode(id,eid);if(!S.read||S.read.eid!==eid)return;S.read=d?{eid,state:"ok",body:d.body}:{eid,state:"missing"};}
   catch(e){if(S.read&&S.read.eid===eid)S.read={eid,state:"err"};}
   if(S.view.name==="reader"&&S.view.eid===eid)render();}
 async function openEpEditor(id,eid){S.epDraft={id,eid,state:eid?"loading":"ok"};go({name:"ep"});if(!eid)return;
-  try{const d=await getDoc(doc(S.db,"novels",id,"episodes",eid));const x=d.exists()?d.data():{};S.epDraft={id,eid,state:"ok",title:String(x.title||""),body:String(x.body||""),createdAt:Number(x.createdAt)||0};}
+  try{const x=(await API.getEpisode(id,eid))||{};S.epDraft={id,eid,state:"ok",title:String(x.title||""),body:String(x.body||""),createdAt:Number(x.createdAt)||0};}
   catch(e){S.epDraft={id,eid,state:"ok"};toast("본문을 불러오지 못했어요.");}if(S.view.name==="ep")render();}
 
 /* ---------- events ---------- */
@@ -564,7 +636,7 @@ function handle(a,id,eid,t){
    case "draw":openPainter();break;
    case "account":accountModal();break;
    case "editpen":penModal();break;
-   case "logout":closeModal();signOut(S.auth).then(()=>toast("로그아웃했어요."));break;
+   case "logout":closeModal();Promise.resolve(API.signOut()).then(()=>toast("로그아웃했어요."));break;
    case "close":case "ovclose":closeModal();S.after=null;break;
    case "askyes":case "askno":closeModal();if(askRes){askRes(a==="askyes");askRes=null;}break;
    case "open":closeModal();go({name:"novel",id});break;
@@ -596,7 +668,7 @@ document.addEventListener("keydown",ev=>{if(ev.key==="Escape"&&$("#modal").inner
 
 /* ---------- 표지 그리기 ---------- */
 const PW=600,PH=840;
-const P={tool:"brush",prev:"brush",c1:"#111214",c2:"#ffffff",size:14,alpha:100,hollow:false,mirror:false,grid:true,gclear:false,
+const P={h:0,s:0,v:0,cpLock:false,tool:"brush",prev:"brush",c1:"#111214",c2:"#ffffff",size:14,alpha:100,hollow:false,mirror:false,grid:true,gclear:false,
   font:"Black Han Sans",fsize:72,outline:false,tol:40,recent:[],undo:[],redo:[],down:false};
 const IC={
  brush:'<path d="M4 20c3 0 5-2 5-4a3 3 0 0 0-3-3c-2 0-2 2-2 3s-1 3-2 4z"/><path d="M9 13 19 3l2 2-10 10"/>',
@@ -613,9 +685,9 @@ const IC={
  grad:'<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 4v16M12 4v16" opacity=".45"/>',
  text:'<path d="M5 7V4h14v3M12 4v16M9 20h6"/>'};
 const TOOLS=[["brush","붓","b"],["pencil","연필","p"],["marker","마커","m"],["air","에어브러시","a"],["callig","캘리펜","c"],["eraser","지우개","e"],["fill","채우기","g"],["picker","스포이드","i"],["line","직선","l"],["rect","사각형","r"],["ellipse","원","o"],["grad","그라데이션","d"],["text","글자","t"]];
-const PAL=["#111214","#3d4047","#7c818a","#c3c7cd","#ffffff","#f3e9da","#c9a27e","#7a4b2a","#4a2c1d","#000000",
- "#d61f3a","#ff6b4a","#ffa53d","#ffd84a","#9bd36a","#2e9e5b","#2bb3c0","#2f6fed","#1d2f6f","#7b4fd6",
- "#c25fd1","#ff8fb8","#ffd1dc","#bfe3ff","#d9f2c4","#fff2b3","#5c0f1f","#0f3d2e","#132a4a","#2b1640"];
+function getPal(){const out=[];for(let i=0;i<12;i++){const v=Math.round(i*255/11);out.push(rgbHex(v,v,v));}
+  const hsl=(h,sa,l)=>{sa/=100;l/=100;const k=n=>(n+h/30)%12,q=sa*Math.min(l,1-l),f=n=>l-q*Math.max(-1,Math.min(k(n)-3,9-k(n),1));return rgbHex(...[0,8,4].map(n=>Math.round(f(n)*255)));};
+  [92,82,68,52,38,24].forEach(l=>{for(let h=0;h<360;h+=30)out.push(hsl(h,l>=82?85:90,l));});return out;}
 const FONTS=[["Black Han Sans","굵은 제목"],["Noto Serif KR","명조"],["Nanum Myeongjo","나눔명조 굵게"],["Do Hyeon","도현"],["Nanum Pen Script","손글씨"],["Pretendard Variable","고딕"]];
 const FREE=new Set(["brush","pencil","marker","air","callig","eraser"]),SHAPE=new Set(["line","rect","ellipse"]);
 let pm,po,mctx,octx,sprayT=null,ro=null;
@@ -628,10 +700,13 @@ function painterHtml(title){
    <nav class="pt-tools" aria-label="그리기 도구">${TOOLS.map(t=>`<button type="button" data-tool="${t[0]}" title="${t[1]} (${t[2].toUpperCase()})" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true">${IC[t[0]]}</svg><span>${t[1]}</span></button>`).join("")}</nav>
    <div class="pt-stage" id="ptStage"><div class="pt-wrap" id="ptWrap"><canvas id="ptMain" width="${PW}" height="${PH}"></canvas><canvas id="ptOver" width="${PW}" height="${PH}" aria-label="표지 캔버스"></canvas><div class="pt-grid" id="ptGrid"></div><div class="pt-cur" id="ptCur"></div></div></div>
    <aside class="pt-side">
-    <section><h4>색 <output id="ptAlphaShow"></output></h4>
+    <section><h4>색 <output>1,677만 색 중 아무 색이나</output></h4>
      <div class="pt-colrow"><div class="pt-cc"><input type="color" id="ptC1" aria-label="주색" title="주색"><input type="color" id="ptC2" aria-label="보조색" title="보조색"><button type="button" data-pt="swap" title="주색·보조색 바꾸기 (X)">⇄</button></div>
       <input class="hex" id="ptHex" maxlength="7" aria-label="주색 코드"></div>
-     <div class="pt-pal">${PAL.map(c=>`<button type="button" data-col="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}</div>
+     <div class="cp"><canvas id="cpSV" width="256" height="160" aria-label="채도·밝기 고르기"></canvas><canvas id="cpH" width="256" height="16" aria-label="색상 고르기"></canvas>
+      <div class="cp-rgb"><label>R<input id="cpR" type="number" min="0" max="255"></label><label>G<input id="cpG" type="number" min="0" max="255"></label><label>B<input id="cpB" type="number" min="0" max="255"></label></div></div>
+     <div class="pt-sub">자주 쓰는 색</div>
+     <div class="pt-pal">${getPal().map(c=>`<button type="button" data-col="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}</div>
      <div class="pt-sub">최근 쓴 색</div><div class="pt-pal" id="ptRecent"></div></section>
     <section id="ptOSize"><h4>굵기 <output id="ptSizeV"></output></h4><input type="range" id="ptSize" min="1" max="150"></section>
     <section><h4>투명도 <output id="ptAlphaV"></output></h4><input type="range" id="ptAlpha" min="5" max="100"></section>
@@ -681,6 +756,14 @@ function bindPainter(){const root=$("#painter");
   on("ptMirror","change",e=>P.mirror=e.target.checked);
   on("ptGridT","change",e=>{P.grid=e.target.checked;ptSync();});
   on("ptImg","change",e=>{const f=e.target.files&&e.target.files[0];e.target.value="";if(f)ptImport(f);});
+  const clamp=x=>Math.max(0,Math.min(1,x));
+  const cpDrag=(el,fn)=>el.addEventListener("pointerdown",e=>{e.preventDefault();try{el.setPointerCapture(e.pointerId);}catch(_){}fn(e);
+    const mv=ev=>fn(ev),up=()=>{el.removeEventListener("pointermove",mv);el.removeEventListener("pointerup",up);el.removeEventListener("pointercancel",up);addRecent(P.c1);};
+    el.addEventListener("pointermove",mv);el.addEventListener("pointerup",up);el.addEventListener("pointercancel",up);});
+  const sv=$("#cpSV"),hu=$("#cpH");
+  cpDrag(sv,e=>{const r=sv.getBoundingClientRect();P.s=clamp((e.clientX-r.left)/r.width);P.v=1-clamp((e.clientY-r.top)/r.height);P.c1=hsvToHex(P.h,P.s,P.v);P.cpLock=true;ptSync();P.cpLock=false;});
+  cpDrag(hu,e=>{const r=hu.getBoundingClientRect();P.h=clamp((e.clientX-r.left)/r.width)*359.9;P.c1=hsvToHex(P.h,P.s,P.v);P.cpLock=true;ptSync();P.cpLock=false;});
+  ["cpR","cpG","cpB"].forEach(id=>on(id,"change",()=>{const v=["cpR","cpG","cpB"].map(i=>Math.max(0,Math.min(255,parseInt($("#"+i).value,10)||0)));ptColor(rgbHex(...v));addRecent(P.c1);}));
   po.addEventListener("pointerdown",ptDown);po.addEventListener("pointermove",ptMove);
   po.addEventListener("pointerup",ptUp);po.addEventListener("pointercancel",ptUp);
   po.addEventListener("pointerleave",()=>{$("#ptCur").style.display="none";if(!P.down&&P.tool==="text")octx.clearRect(0,0,PW,PH);});
@@ -696,7 +779,18 @@ function ptSync(){const set=(id,v)=>{const e=$("#"+id);if(e)e.value=v;},txt=(id,
   show("ptOSize",!["fill","picker","text","grad"].includes(P.tool));show("ptOShape",SHAPE.has(P.tool));show("ptOFill",P.tool==="fill");show("ptOGrad",P.tool==="grad");show("ptOText",P.tool==="text");
   $("#ptGrid").hidden=!P.grid;
   $("#ptRecent").innerHTML=P.recent.length?P.recent.map(c=>`<button type="button" data-col="${c}" style="background:${c}" aria-label="${c}"></button>`).join(""):`<span class="pt-help" style="grid-column:1/-1">아직 없어요</span>`;
-  $("#ptUndo").disabled=!P.undo.length;$("#ptRedo").disabled=!P.redo.length;}
+  $("#ptUndo").disabled=!P.undo.length;$("#ptRedo").disabled=!P.redo.length;
+  if(!P.cpLock){const [h,sa,v]=hexToHsv(P.c1);if(sa>0&&v>0)P.h=h;P.s=sa;P.v=v;}
+  const [r,g,b]=hexRgb(P.c1);set("cpR",r);set("cpG",g);set("cpB",b);drawCP();}
+function hexToHsv(hex){const [r,g,b]=hexRgb(hex).map(x=>x/255),mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;let h=0;
+  if(d){if(mx===r)h=((g-b)/d)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360;}return [h,mx?d/mx:0,mx];}
+function hsvToHex(h,sa,v){const f=n=>{const k=(n+h/60)%6;return v-v*sa*Math.max(0,Math.min(k,4-k,1));};return rgbHex(...[5,3,1].map(n=>Math.round(f(n)*255)));}
+function drawCP(){const sv=$("#cpSV"),hu=$("#cpH");if(!sv)return;const a=sv.getContext("2d"),W=sv.width,H=sv.height;
+  a.fillStyle=hsvToHex(P.h,1,1);a.fillRect(0,0,W,H);let g=a.createLinearGradient(0,0,W,0);g.addColorStop(0,"#fff");g.addColorStop(1,"rgba(255,255,255,0)");a.fillStyle=g;a.fillRect(0,0,W,H);
+  g=a.createLinearGradient(0,0,0,H);g.addColorStop(0,"rgba(0,0,0,0)");g.addColorStop(1,"#000");a.fillStyle=g;a.fillRect(0,0,W,H);
+  a.lineWidth=2.5;a.strokeStyle=(P.v>0.6&&P.s<0.4)?"#000":"#fff";a.beginPath();a.arc(P.s*W,(1-P.v)*H,7,0,Math.PI*2);a.stroke();
+  const b=hu.getContext("2d"),HW=hu.width,HH=hu.height,hg=b.createLinearGradient(0,0,HW,0);[0,60,120,180,240,300,359.9].forEach(d=>hg.addColorStop(d/360,hsvToHex(d,1,1)));
+  b.fillStyle=hg;b.fillRect(0,0,HW,HH);const hx=P.h/360*HW;b.lineWidth=2;b.strokeStyle="#fff";b.strokeRect(hx-3,1,6,HH-2);b.lineWidth=1;b.strokeStyle="#000";b.strokeRect(hx-4.5,0.5,9,HH-1);}
 function ptTool(t){if(t==="picker"&&P.tool!=="picker")P.prev=P.tool;P.tool=t;octx.clearRect(0,0,PW,PH);ptSync();}
 function ptColor(c){P.c1=c;ptSync();}
 function addRecent(c){P.recent=[c].concat(P.recent.filter(x=>x!==c)).slice(0,10);ptSync();}
@@ -811,21 +905,22 @@ function ptKey(e){if(!$("#painter")||$("#modal").innerHTML)return;const tg=e.tar
 
 window.mjOpenPainter=openPainter; /* 표지 그리기 창 테스트용 */
 /* ---------- boot ---------- */
+let API=null;
 render();
-if(CONFIGURED){
-  const fb=initializeApp(FIREBASE_CONFIG);S.auth=getAuth(fb);S.db=getFirestore(fb);
-  onSnapshot(query(collection(S.db,"novels"),limit(500)),snap=>{const m={};snap.forEach(d=>m[d.id]=d.data());S.novels=m;S.loaded=true;softRender();},e=>{S.err=true;S.loaded=false;render();});
-  onSnapshot(query(collection(S.db,"hearts"),where("createdAt",">=",Date.now()-WEEK)),snap=>{const w={};snap.forEach(d=>{const n=d.data().nid;if(n)w[n]=(w[n]||0)+1;});S.week=w;softRender();},()=>{});
+(async()=>{
+  if(CONFIGURED){try{API=await makeFirebaseAPI();}catch(e){API=null;toast("온라인 저장소에 연결하지 못해서 이 브라우저 저장 모드로 열었어요.");}}
+  if(!API)API=makeLocalAPI();
+  API.watchNovels(m=>{S.novels=m;S.loaded=true;S.err=false;softRender();},e=>{S.err=true;S.loaded=false;render();});
+  API.watchWeek(w=>{S.week=w;softRender();});
   let unMine=null;
-  onAuthStateChanged(S.auth,async u=>{S.user=u;S.uid=u?u.uid:null;S.authReady=true;S.mine=new Set();S.pen="";if(unMine){unMine();unMine=null;}
-    S.loginId=u&&u.email?u.email.split("@")[0]:"";
-    if(u&&S.signingUp){render();unMine=onSnapshot(query(collection(S.db,"hearts"),where("uid","==",u.uid)),snap=>{const s=new Set();snap.forEach(d=>s.add(d.data().nid));S.mine=s;softRender();},()=>{});return;}
-    if(u){try{const p=await getDoc(doc(S.db,"users",u.uid));S.pen=p.exists()?String(p.data().penName||""):"";}catch(e){}
-      unMine=onSnapshot(query(collection(S.db,"hearts"),where("uid","==",u.uid)),snap=>{const s=new Set();snap.forEach(d=>s.add(d.data().nid));S.mine=s;softRender();},()=>{});
+  API.onAuth(async u=>{S.uid=u?u.uid:null;S.loginId=u?u.loginId:"";S.authReady=true;S.mine=new Set();S.pen="";if(unMine){unMine();unMine=null;}
+    if(u)unMine=API.watchMine(u.uid,set=>{S.mine=set;softRender();});
+    if(u&&S.signingUp){render();return;}
+    if(u){try{const p=await API.getUser(u.uid);S.pen=p?String(p.penName||""):"";}catch(e){}
       if(!S.pen)penModal();else runAfter();}
     else if(["library","write","ep"].includes(S.view.name))S.view={name:"home"};
     render();});
-}
+})();
 </script>
 </body>
 </html>
