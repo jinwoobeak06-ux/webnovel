@@ -762,7 +762,7 @@ async function submitEp(){if(S.busy)return;const e=S.epDraft||{},n=findNovel(e.i
     const i=raw.findIndex(x=>x.id===eid);if(i>=0)raw[i].title=title;else raw.push({id:eid,title,at:now});
     const upd={episodes:raw,episodeCount:raw.length};if(i<0)upd.updatedAt=now;
     await API.saveEpisode(n.id,eid,{title,body,createdAt:e.createdAt||now,updatedAt:now},upd);S.novels[n.id]=Object.assign({},S.novels[n.id],upd);
-    lsSet(draftKey(n.id,e.eid),null);const no=raw.findIndex(x=>x.id===eid)+1;
+    clearTimeout(autoT);lsSet(draftKey(n.id,e.eid),null);const no=raw.findIndex(x=>x.id===eid)+1;
     toast(first?"1화가 올라갔어요! 이제 추천 목록에 노출돼요.":e.eid?no+"화를 저장했어요.":no+"화를 올렸어요.");S.epDraft=null;go({name:"novel",id:n.id});}
   catch(err){toast(errMsg(err));btn.disabled=false;btn.textContent=e.eid?"저장":"올리기";}finally{S.busy=false;}}
 
@@ -809,7 +809,7 @@ function handle(a,id,eid,t){
    case "login":authModal("login");break;
    case "signup":authModal("signup");break;
    case "draw":openPainter();break;
-   case "closewriter":S.epDraft=null;render();break;
+   case "closewriter":clearTimeout(autoT);captureWriter();saveDraftNow();S.epDraft=null;render();break;
    case "eppreview":if(!S.epDraft)return;captureWriter();S.epDraft.preview=!S.epDraft.preview;render();break;
    case "epimgdel":removeEpImage(t.dataset.iid);break;
    case "epdraw":{if(!S.epDraft)return;captureWriter();if(t.dataset.b!=null)S.epDraft.tb=+t.dataset.b;const nid=S.epDraft.id;
@@ -847,11 +847,11 @@ document.addEventListener("change",async ev=>{if(ev.target.name==="kind"){docume
   try{const url=await makeCover(file);const d=S.draft||(S.draft={});const kk=document.querySelector('input[name="kind"]:checked');Object.assign(d,{title:$("#title").value,genre:$("#genre").value,synopsis:$("#syn").value,kind:kk?kk.value:d.kind,preview:url});render();}
   catch(e){toast("이미지를 읽지 못했어요. 다른 파일을 골라 주세요.");}});
 let autoT;
-document.addEventListener("input",ev=>{if(ev.target.classList&&ev.target.classList.contains("blktext")){captureWriter();clearTimeout(autoT);autoT=setTimeout(()=>{saveDraftNow();const n=$("#autosave");if(n){const d=new Date();n.textContent=`임시 저장됨 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}},600);return;}
+document.addEventListener("input",ev=>{if(ev.target.classList&&ev.target.classList.contains("blktext")){captureWriter();clearTimeout(autoT);const d0=S.epDraft;autoT=setTimeout(()=>{if(S.epDraft!==d0)return;saveDraftNow();const n=$("#autosave");if(n){const d=new Date();n.textContent=`임시 저장됨 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}},600);return;}
   if(ev.target.id!=="epBody"&&ev.target.id!=="epTitle"&&ev.target.id!=="epText")return;const b=$("#epBody"),t=$("#epTitle"),x=$("#epText");
   const c=$("#cc");if(c&&b)c.textContent=fmtN(b.value.length)+"자";
   const e=S.epDraft;if(!e)return;e.title=t?t.value:"";if(b)e.body=b.value;if(x)e.body=compose(imgIds(e.body),x.value);clearTimeout(autoT);
-  autoT=setTimeout(()=>{lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title,body:e.body}));const n=$("#autosave");if(n){const d=new Date();n.textContent=`임시 저장됨 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}},600);});
+  autoT=setTimeout(()=>{if(S.epDraft!==e)return;lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title,body:e.body}));const n=$("#autosave");if(n){const d=new Date();n.textContent=`임시 저장됨 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}},600);});
 document.addEventListener("keydown",ev=>{if(ev.key==="Escape"&&$("#modal").innerHTML){closeModal();if(askRes){askRes(false);askRes=null;}}});
 
 /* ---------- 표지 그리기 ---------- */
