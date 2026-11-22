@@ -180,6 +180,27 @@ h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
 .setup pre{background:var(--card);border-radius:12px;padding:16px;overflow-x:auto;max-height:260px}
 .foot{color:var(--sub);font-size:13px;padding:40px 0 48px;margin-top:64px;border-top:1px solid var(--line)}
 
+/* episode tiles + inline writer */
+.epgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.eptile{border:1px solid var(--line);border-radius:14px;background:var(--card);display:flex;flex-direction:column;overflow:hidden;transition:border-color .15s,transform .15s}
+.eptile:hover{border-color:var(--ink);transform:translateY(-2px)}
+.eptile.on{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.eptile .tmain{background:none;border:0;text-align:left;padding:16px 16px 12px;display:flex;flex-direction:column;gap:3px;flex:1}
+.eptile b{font-size:22px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.eptile span{font-size:13px;line-height:1.4;word-break:keep-all}
+.eptile small{color:var(--sub);font-size:12px;font-variant-numeric:tabular-nums}
+.eptile .tedit{border:0;border-top:1px solid var(--line);background:none;padding:8px;font-size:12px;font-weight:600;color:var(--sub)}
+.eptile .tedit:hover{color:var(--ink);background:var(--soft)}
+.eptile.add{border-style:dashed;border-width:2px;background:transparent}
+.eptile.add .tmain{align-items:center;justify-content:center;text-align:center;min-height:96px}
+.writer{margin-top:28px;border-radius:20px;background:var(--card);border:1.5px solid var(--ink);padding:24px 28px;scroll-margin-top:90px}
+.writer .wh{display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:18px}
+.wno{font-weight:800;font-size:28px;letter-spacing:-.03em;white-space:nowrap}
+#epTitle{flex:1;min-width:0;border:0;background:transparent;font-size:18px;font-weight:600;padding:6px 0;outline:none}
+#epBody{width:100%;min-height:60vh;border:0;background:transparent;resize:vertical;font-family:var(--serif);font-size:17px;line-height:1.95;outline:none;padding:0}
+.wf{display:flex;align-items:center;gap:12px;border-top:1px solid var(--line);padding-top:14px;flex-wrap:wrap}
+.wf .btn-text{margin-left:auto}
+
 /* auth tabs, cover buttons */
 [hidden]{display:none!important}
 .tabs{display:flex;background:var(--soft);border-radius:999px;padding:4px;margin-bottom:24px}
@@ -461,22 +482,29 @@ function vHome(){
 function vSearch(){const q=S.q.toLowerCase();const r=allNovels().filter(n=>(n.title+" "+n.pen+" "+n.synopsis).toLowerCase().includes(q)).sort(byPop);
   return `<section class="sec"><div class="sec-h"><h2>‘${esc(S.q)}’ 검색 결과</h2><span class="d">${r.length}개</span></div>${r.length?`<div class="grid">${r.map(n=>card(n)).join("")}</div>`:`<div class="empty">찾는 작품이 없어요. 다른 단어로 검색해 보세요.</div>`}</section>`;}
 
-function vNovel(){const n=findNovel(S.view.id);if(!n)return notFound();const mine=n.aid===S.uid;
-  const list=S.epOrder==="asc"?n.eps:n.eps.slice().reverse();const lastId=n.eps.length?n.eps[n.eps.length-1].id:"";
+function vNovel(){const n=findNovel(S.view.id);if(!n)return notFound();const mine=n.aid===S.uid;const w=S.epDraft&&S.epDraft.id===n.id?S.epDraft:null;
   return `<div class="novel"><aside class="side"><div class="cv">${coverHtml(n)}</div>
    <div class="row">${n.epCount?`<span class="pill">연재 중</span>`:`<span class="pill off">연재 준비 중</span>`}<span class="cm">${esc(n.genre)}</span></div>
    <h1>${esc(n.title)}</h1>
-   <div class="meta"><span>${esc(n.pen)}</span><span>${n.epCount}화</span><span>♥ <span data-hc="${esc(n.id)}">${fmtN(n.hearts)}</span></span></div>
+   <div class="meta"><span>${esc(n.pen)}</span><span>총 ${n.epCount}화</span><span>♥ <span data-hc="${esc(n.id)}">${fmtN(n.hearts)}</span></span></div>
    <div class="syn">${esc(n.synopsis||"작품 소개가 아직 없어요.")}</div>
-   <div class="row">${n.epCount?`<button class="btn" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(n.eps[0].id)}">첫 화 보기</button>`:""}${mine?"":heartBtn(n)}</div>
-   ${mine?`<div class="row"><button class="btn${n.epCount?"-soft":""}" type="button" data-act="newep" data-id="${esc(n.id)}">회차 등록</button><button class="btn-soft" type="button" data-act="editnovel" data-id="${esc(n.id)}">작품 수정</button></div>`:""}
-   ${mine&&!n.epCount?`<div class="warn"><b>회차를 1개 이상 등록해야</b> 인기 소설·최신 연재에 올라가요.</div>`:""}
+   <div class="row">${n.epCount?`<button class="btn" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(n.eps[0].id)}">1화부터 보기</button>`:""}${mine?"":heartBtn(n)}</div>
+   ${mine?`<div class="row"><button class="btn${n.epCount?"-soft":""}" type="button" data-act="newep" data-id="${esc(n.id)}">+ ${n.epCount+1}화 쓰기</button><button class="btn-soft" type="button" data-act="editnovel" data-id="${esc(n.id)}">작품 수정</button></div>`:""}
+   ${mine&&!n.epCount?`<div class="warn"><b>1화를 올려야</b> 인기 소설·최신 연재에 올라가요.</div>`:""}
   </aside>
-  <section><div class="eph"><h2>전체 회차</h2><span class="n">${n.epCount}개</span>
-   ${n.epCount>1?`<div class="seg" role="group" aria-label="정렬"><button type="button" data-act="order" data-o="asc" aria-pressed="${S.epOrder==="asc"}">1화부터</button><button type="button" data-act="order" data-o="desc" aria-pressed="${S.epOrder==="desc"}">최신순</button></div>`:""}</div>
-   ${n.epCount?`<ul class="eps">${list.map(e=>`<li><button class="ep${e.id===lastId?" last":""}" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(e.id)}"><span class="no">${e.no}</span><span><span class="t">${esc(e.title||e.no+"화")}</span><span class="dt">${fmtD(e.at)}${e.id===lastId?" · 최신화":""}</span></span><span class="go">읽기 →</span></button></li>`).join("")}</ul>`
-   :`<div class="empty">아직 올라온 회차가 없어요.${mine?`<div class="row"><button class="btn" type="button" data-act="newep" data-id="${esc(n.id)}">1화 쓰기</button></div>`:""}</div>`}
+  <section><div class="eph"><h2>회차</h2><span class="n">총 ${n.epCount}화</span></div>
+   ${n.epCount||mine?`<div class="epgrid">${n.eps.map(e=>`<div class="eptile${w&&w.eid===e.id?" on":""}"><button class="tmain" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(e.id)}"><b>${e.no}화</b><span>${esc(e.title||"")}</span><small>${fmtD(e.at)}</small></button>${mine?`<button class="tedit" type="button" data-act="editep" data-id="${esc(n.id)}" data-eid="${esc(e.id)}">고치기</button>`:""}</div>`).join("")}
+    ${mine?`<div class="eptile add${w&&!w.eid?" on":""}"><button class="tmain" type="button" data-act="newep" data-id="${esc(n.id)}"><b>+ ${n.epCount+1}화</b><span>새로 쓰기</span></button></div>`:""}</div>`:`<div class="empty">아직 올라온 회차가 없어요.</div>`}
+   ${w?vWriter(n,w):""}
   </section></div>`;}
+function vWriter(n,w){if(w.state==="loading")return `<section class="writer" id="writer"><div class="empty">회차를 불러오는 중이에요…</div></section>`;
+  const no=w.eid?(n.eps.find(x=>x.id===w.eid)||{}).no:n.epCount+1;
+  return `<section class="writer" id="writer"><form data-form="ep" novalidate>
+   <div class="wh"><span class="wno">${no}화</span><input id="epTitle" maxlength="60" value="${esc(w.title||"")}" placeholder="제목 (안 적어도 돼요)" aria-label="${no}화 제목"></div>
+   <textarea id="epBody" maxlength="60000" placeholder="여기에 ${no}화 이야기를 써 주세요." aria-label="${no}화 본문">${esc(w.body||"")}</textarea>
+   <div class="wf"><span class="cc" id="cc">${fmtN((w.body||"").length)}자</span><span class="cm" id="autosave">쓰는 내용은 이 기기에 자동으로 임시 저장돼요</span>
+    <button class="btn-text" type="button" data-act="closewriter">닫기</button><button class="btn" type="submit" id="saveEp">${w.eid?`${no}화 저장`:`${no}화 올리기`}</button></div>
+  </form></section>`;}
 
 function vReader(){const n=findNovel(S.view.id);if(!n)return notFound();const i=n.eps.findIndex(e=>e.id===S.view.eid);const ep=n.eps[i];if(!ep)return notFound("회차를 찾을 수 없어요");
   const prev=n.eps[i-1],next=n.eps[i+1],mine=n.aid===S.uid,r=S.read||{};
@@ -484,7 +512,7 @@ function vReader(){const n=findNovel(S.view.id);if(!n)return notFound();const i=
   return `<article class="reader"><div class="rbar"><button class="btn-soft" type="button" data-act="open" data-id="${esc(n.id)}">← 회차 목록</button>
    <div class="row">${mine?`<button class="btn-text" type="button" data-act="editep" data-id="${esc(n.id)}" data-eid="${esc(ep.id)}">수정</button><button class="btn-text" type="button" data-act="delep" data-id="${esc(n.id)}" data-eid="${esc(ep.id)}">삭제</button>`:""}
    <div class="fs" role="group" aria-label="글자 크기"><button type="button" data-act="fs-" aria-label="글자 작게">가−</button><button type="button" data-act="fs+" aria-label="글자 크게">가+</button></div></div></div>
-   <div class="lbl">${esc(n.title)} · ${ep.no}화</div><h1>${esc(ep.title||ep.no+"화")}</h1>${body}
+   <div class="lbl">${esc(n.title)}${ep.title?" · "+esc(ep.title):""}</div><h1>${ep.no}화</h1>${body}
    <div class="rend">${mine?`<span class="cm">내 작품 · 하트 ${fmtN(n.hearts)}개</span>`:`<span class="cm">재미있었다면 하트를 눌러 주세요. 인기 순위에 반영돼요.</span>${heartBtn(n)}`}
     <div class="pn">${prev?`<button class="btn-soft" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(prev.id)}">← ${prev.no}화</button>`:"<span></span>"}
     ${next?`<button class="btn" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(next.id)}">${next.no}화 →</button>`:mine?`<button class="btn" type="button" data-act="newep" data-id="${esc(n.id)}">다음 회차 쓰기</button>`:`<span class="cm">마지막 회차예요</span>`}</div></div></article>`;}
@@ -533,8 +561,8 @@ function render(){renderHeader();
 function patchHearts(){const all=allNovels(),m={};all.forEach(n=>m[n.id]=n.hearts);
   document.querySelectorAll("[data-hc]").forEach(el=>el.textContent=fmtN(m[el.dataset.hc]||0));
   document.querySelectorAll("[data-hb]").forEach(el=>{const on=liked(el.dataset.hb);el.setAttribute("aria-pressed",String(on));const s=el.querySelector("[data-hl]");if(s)s.textContent=on?"하트 취소":"하트";});}
-function softRender(){if(["write","ep","reader"].includes(S.view.name)){renderHeader();patchHearts();return;}render();}
-function go(v){S.view=v;window.scrollTo(0,0);render();}
+function softRender(){if(["write","ep","reader"].includes(S.view.name)||(S.view.name==="novel"&&S.epDraft&&S.epDraft.id===S.view.id)){renderHeader();patchHearts();return;}render();}
+function go(v){if(!(v.name==="novel"&&S.epDraft&&S.epDraft.id===v.id))S.epDraft=null;S.view=v;window.scrollTo(0,0);render();}
 
 /* ---------- modal ---------- */
 function modal(html){$("#modal").innerHTML=`<div class="ov" data-act="ovclose"><div class="panel" role="dialog" aria-modal="true">${html}</div></div>`;const f=$("#modal input")||$("#modal .panel button");if(f)f.focus();}
@@ -591,7 +619,7 @@ async function submitNovel(){if(S.busy)return;const d=S.draft||{};
   try{const now=Date.now();let id=d.id;
     if(id)await API.updateNovel(id,{title,genre,synopsis,cover:d.preview,penName:S.pen});
     else{id=API.newId();await API.createNovel(id,{authorId:S.uid,penName:S.pen,title,genre,synopsis,cover:d.preview,episodes:[],episodeCount:0,heartCount:0,createdAt:now,updatedAt:now});}
-    toast(d.id?"작품 정보를 저장했어요.":"작품을 등록했어요. 이제 1화를 올려 보세요!");S.draft=null;go({name:"novel",id});}
+    S.draft=null;if(d.id){toast("작품 정보를 저장했어요.");go({name:"novel",id});}else{toast("작품을 등록했어요. 바로 1화를 써 보세요!");openEpEditor(id,null);}}
   catch(e){toast(errMsg(e));btn.disabled=false;btn.textContent=d.id?"저장":"작품 등록";}finally{S.busy=false;}}
 
 async function submitEp(){if(S.busy)return;const e=S.epDraft||{},n=findNovel(e.id);if(!n)return;
@@ -602,8 +630,9 @@ async function submitEp(){if(S.busy)return;const e=S.epDraft||{},n=findNovel(e.i
     const i=raw.findIndex(x=>x.id===eid);if(i>=0)raw[i].title=title;else raw.push({id:eid,title,at:now});
     const upd={episodes:raw,episodeCount:raw.length};if(i<0)upd.updatedAt=now;
     await API.saveEpisode(n.id,eid,{title,body,createdAt:e.createdAt||now,updatedAt:now},upd);S.novels[n.id]=Object.assign({},S.novels[n.id],upd);
-    toast(first?"첫 회차가 올라갔어요! 이제 추천 목록에 노출돼요.":e.eid?"회차를 저장했어요.":"회차를 등록했어요.");S.epDraft=null;openReader(n.id,eid);}
-  catch(err){toast(errMsg(err));btn.disabled=false;btn.textContent=e.eid?"저장":"회차 등록";}finally{S.busy=false;}}
+    lsSet(draftKey(n.id,e.eid),null);const no=raw.findIndex(x=>x.id===eid)+1;
+    toast(first?"1화가 올라갔어요! 이제 추천 목록에 노출돼요.":e.eid?no+"화를 저장했어요.":no+"화를 올렸어요.");S.epDraft=null;go({name:"novel",id:n.id});}
+  catch(err){toast(errMsg(err));btn.disabled=false;btn.textContent=e.eid?"저장":"올리기";}finally{S.busy=false;}}
 
 async function delEp(id,eid){if(!await ask("이 회차를 삭제할까요? 되돌릴 수 없어요.","삭제"))return;
   try{const raw=(S.novels[id].episodes||[]).filter(x=>x&&x.id&&x.id!==eid);
@@ -620,9 +649,16 @@ async function openReader(id,eid){S.view={name:"reader",id,eid};S.read={eid,stat
   try{const d=await API.getEpisode(id,eid);if(!S.read||S.read.eid!==eid)return;S.read=d?{eid,state:"ok",body:d.body}:{eid,state:"missing"};}
   catch(e){if(S.read&&S.read.eid===eid)S.read={eid,state:"err"};}
   if(S.view.name==="reader"&&S.view.eid===eid)render();}
-async function openEpEditor(id,eid){S.epDraft={id,eid,state:eid?"loading":"ok"};go({name:"ep"});if(!eid)return;
-  try{const x=(await API.getEpisode(id,eid))||{};S.epDraft={id,eid,state:"ok",title:String(x.title||""),body:String(x.body||""),createdAt:Number(x.createdAt)||0};}
-  catch(e){S.epDraft={id,eid,state:"ok"};toast("본문을 불러오지 못했어요.");}if(S.view.name==="ep")render();}
+const draftKey=(id,eid)=>"mj_draft_"+id+"_"+(eid||"new");
+function focusWriter(){const w=$("#writer");if(w)w.scrollIntoView({behavior:"smooth",block:"start"});const b=$("#epBody");if(b)setTimeout(()=>b.focus({preventScroll:true}),350);}
+async function openEpEditor(id,eid){let saved=null;try{saved=JSON.parse(lsGet(draftKey(id,eid))||"null");}catch(e){}
+  S.epDraft={id,eid,state:eid?"loading":"ok"};if(!eid&&saved){S.epDraft.title=saved.title||"";S.epDraft.body=saved.body||"";}
+  if(S.view.name==="novel"&&S.view.id===id)render();else go({name:"novel",id});focusWriter();
+  if(!eid){if(saved&&saved.body)toast("임시 저장된 글을 불러왔어요.");return;}
+  try{const x=(await API.getEpisode(id,eid))||{};
+    S.epDraft={id,eid,state:"ok",title:String(saved?saved.title:(x.title||"")),body:String(saved?saved.body:(x.body||"")),createdAt:Number(x.createdAt)||0};
+    if(saved)toast("고치던 내용을 불러왔어요.");}catch(e){S.epDraft={id,eid,state:"ok"};toast("본문을 불러오지 못했어요.");}
+  if(S.view.name==="novel"&&S.epDraft&&S.epDraft.eid===eid){render();focusWriter();}}
 
 /* ---------- events ---------- */
 function handle(a,id,eid,t){
@@ -634,6 +670,7 @@ function handle(a,id,eid,t){
    case "login":authModal("login");break;
    case "signup":authModal("signup");break;
    case "draw":openPainter();break;
+   case "closewriter":S.epDraft=null;render();break;
    case "account":accountModal();break;
    case "editpen":penModal();break;
    case "logout":closeModal();Promise.resolve(API.signOut()).then(()=>toast("로그아웃했어요."));break;
@@ -663,7 +700,11 @@ document.addEventListener("change",async ev=>{if(ev.target.id!=="cover"&&ev.targ
   if(!/^image\/(png|jpeg|webp)$/.test(file.type)){toast("PNG, JPG, WEBP 이미지만 쓸 수 있어요.");return;}
   try{const url=await makeCover(file);const d=S.draft||(S.draft={});Object.assign(d,{title:$("#title").value,genre:$("#genre").value,synopsis:$("#syn").value,preview:url});render();}
   catch(e){toast("이미지를 읽지 못했어요. 다른 파일을 골라 주세요.");}});
-document.addEventListener("input",ev=>{if(ev.target.id==="epBody"){const c=$("#cc");if(c)c.textContent=fmtN(ev.target.value.length)+"자";}});
+let autoT;
+document.addEventListener("input",ev=>{if(ev.target.id!=="epBody"&&ev.target.id!=="epTitle")return;const b=$("#epBody"),t=$("#epTitle");
+  const c=$("#cc");if(c&&b)c.textContent=fmtN(b.value.length)+"자";
+  const e=S.epDraft;if(!e)return;e.title=t?t.value:"";e.body=b?b.value:"";clearTimeout(autoT);
+  autoT=setTimeout(()=>{lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title,body:e.body}));const n=$("#autosave");if(n){const d=new Date();n.textContent=`임시 저장됨 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}},600);});
 document.addEventListener("keydown",ev=>{if(ev.key==="Escape"&&$("#modal").innerHTML){closeModal();if(askRes){askRes(false);askRes=null;}}});
 
 /* ---------- 표지 그리기 ---------- */
