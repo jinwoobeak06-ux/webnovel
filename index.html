@@ -201,6 +201,32 @@ h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
 .wf{display:flex;align-items:center;gap:12px;border-top:1px solid var(--line);padding-top:14px;flex-wrap:wrap}
 .wf .btn-text{margin-left:auto}
 
+/* webtoon / webnovel */
+.kindtabs{display:flex;gap:28px;margin-top:28px;border-bottom:1px solid var(--line)}
+.kindtabs button{background:none;border:0;padding:10px 2px 12px;font-size:20px;font-weight:800;color:var(--sub);border-bottom:3px solid transparent;margin-bottom:-1px;letter-spacing:-.03em}
+.kindtabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.kindpick{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:28px}
+.kp{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1.5px solid var(--line);border-radius:16px;cursor:pointer;background:var(--card)}
+.kp input{position:absolute;opacity:0;pointer-events:none}
+.kp b{font-size:18px}.kp span{color:var(--sub);font-size:13px}
+.kp.on{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.kp:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+.kindpill{background:var(--soft);color:var(--ink)}
+.step{display:flex;align-items:baseline;gap:10px;margin:6px 0 12px;font-weight:700}
+.step b{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);display:inline-grid;place-items:center;font-size:13px}
+.step .cm{font-weight:400;font-size:12px}
+.toonw .wtools .btn{cursor:pointer}
+.toonlist{list-style:none;margin:0 0 24px;padding:0;display:flex;flex-direction:column;gap:0;max-width:480px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.toonlist li{position:relative}
+.toonlist .toon{display:block}
+.tln{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+.tlb{position:absolute;right:8px;top:8px;display:flex;gap:4px}
+.tlb button{border:0;background:rgba(0,0,0,.7);color:#fff;font-size:12px;padding:4px 9px;border-radius:999px}
+.tlb button[disabled]{opacity:.35}
+#epText{width:100%;border:1.5px solid transparent;background:var(--soft);border-radius:12px;padding:12px 14px;font-size:15px;line-height:1.8;resize:vertical;margin-bottom:8px}
+#epText:focus{outline:none;border-color:var(--ink);background:var(--card)}
+
+.kbadge{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.72);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
 /* in-episode images */
 .wtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .wtools .btn-soft{padding:8px 14px;font-size:14px;cursor:pointer}
@@ -347,7 +373,7 @@ const app=$("#app");
 const HEART='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.3C.8 8 3 4 6.9 4c2.1 0 3.6 1.1 5.1 3 1.5-1.9 3-3 5.1-3C21 4 23.2 8 21.6 11.7 19.5 16.4 12 21 12 21z"/></svg>';
 const CONFIGURED=!/^여기에/.test(FIREBASE_CONFIG.apiKey);
 
-const S={auth:null,db:null,user:null,uid:null,pen:"",authReady:false,
+const S={kind:(lsGet("mj_kind")==="toon"?"toon":"novel"),auth:null,db:null,user:null,uid:null,pen:"",authReady:false,
   novels:{},week:{},mine:new Set(),loaded:false,err:false,
   view:{name:"home"},genre:"전체",q:"",freshLimit:12,epOrder:"asc",read:null,draft:null,epDraft:null,busy:false,after:null};
 
@@ -382,7 +408,8 @@ setFs(parseInt(lsGet("mj_fs")||"18",10)||18);
 function epList(d){return (Array.isArray(d.episodes)?d.episodes:[]).filter(e=>e&&typeof e.id==="string").map((e,i)=>({id:e.id,no:i+1,title:String(e.title||"").slice(0,80),at:Number(e.at)||0}));}
 function allNovels(){return Object.entries(S.novels).map(([id,d])=>{const eps=epList(d);return {id,aid:String(d.authorId||""),pen:String(d.penName||"익명 작가").slice(0,20),
   title:String(d.title||"제목 없음").slice(0,60),genre:GENRES.includes(d.genre)?d.genre:"기타",synopsis:String(d.synopsis||"").slice(0,400),cover:safeImg(d.cover),
-  eps,epCount:eps.length,hearts:Math.max(0,Number(d.heartCount)||0),week:S.week[id]||0,updated:Number(d.updatedAt)||0};});}
+  eps,epCount:eps.length,hearts:Math.max(0,Number(d.heartCount)||0),week:S.week[id]||0,updated:Number(d.updatedAt)||0,kind:d.kind==="toon"?"toon":"novel"};});}
+const KIND={novel:"웹소설",toon:"웹툰"};
 const findNovel=id=>allNovels().find(n=>n.id===id);
 const byPop=(a,b)=>b.hearts-a.hearts||b.week-a.week||b.updated-a.updated;
 const liked=id=>S.mine.has(id);
@@ -390,7 +417,7 @@ const liked=id=>S.mine.has(id);
 /* ---------- pieces ---------- */
 const coverHtml=n=>n.cover?`<img src="${esc(n.cover)}" alt="${esc(n.title)} 표지" loading="lazy">`:`<div class="ph"><span>${esc(n.title)}</span></div>`;
 const card=(n,rank)=>`<button class="card" type="button" data-act="open" data-id="${esc(n.id)}">
-  <div class="cv">${coverHtml(n)}${rank?`<span class="rank">${rank}</span>`:""}</div>
+  <div class="cv">${coverHtml(n)}${rank?`<span class="rank">${rank}</span>`:""}${S.view.name!=="home"?`<span class="kbadge">${KIND[n.kind]}</span>`:""}</div>
   <div class="ct">${esc(n.title)}</div><div class="cm">${esc(n.pen)}</div>
   <div class="cs"><span>${esc(n.genre)}</span><span>·</span><span>${n.epCount?n.epCount+"화":"연재 준비 중"}</span><span class="hc">♥ <span data-hc="${esc(n.id)}">${fmtN(n.hearts)}</span></span></div></button>`;
 const heartBtn=n=>{const on=liked(n.id);return `<button class="heart" type="button" data-act="heart" data-id="${esc(n.id)}" data-hb="${esc(n.id)}" aria-pressed="${on}">${HEART}<span data-hl>${on?"하트 취소":"하트"}</span><span data-hc="${esc(n.id)}">${fmtN(n.hearts)}</span></button>`;};
@@ -494,8 +521,12 @@ function sliceCanvas(src,maxW,sliceH){const sw=src.naturalWidth||src.width,sh=sr
   for(let y=0;y<h;y+=sliceH){const ph=Math.min(sliceH,h-y),c=document.createElement("canvas");c.width=w;c.height=ph;const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,w,ph);x.drawImage(src,0,-y,w,h);out.push(c);}
   return out;}
 async function storeSlices(nid,canvases){const ids=[];for(const c of canvases){const iid=genId(),src=c.toDataURL("image/jpeg",0.84);await API.saveImage(nid,iid,src);imgCache[iid]=src;ids.push(iid);}return ids;}
-function captureWriter(){const e=S.epDraft;if(!e)return;const b=$("#epBody"),t=$("#epTitle");if(b){e.body=b.value;e.caret=b.selectionStart;}if(t)e.title=t.value;}
-function insertTokens(ids){const e=S.epDraft;if(!e||!ids.length)return;const body=e.body||"",at=Math.min(e.caret==null?body.length:e.caret,body.length);
+function textOf(body){return String(body||"").split("\n").filter(l=>!IMG_RE.test(l.trim())).join("\n").replace(/^\n+/,"");}
+function compose(ids,text){const t=String(text||"");return ids.map(i=>`[[그림:${i}]]`).join("\n")+(t.trim()?(ids.length?"\n":"")+t:"");}
+const isToonDraft=()=>{const e=S.epDraft;const n=e&&findNovel(e.id);return !!(n&&n.kind==="toon");};
+function captureWriter(){const e=S.epDraft;if(!e)return;const b=$("#epBody"),t=$("#epTitle"),x=$("#epText");if(b){e.body=b.value;e.caret=b.selectionStart;}if(x)e.body=compose(imgIds(e.body),x.value);if(t)e.title=t.value;}
+function insertTokens(ids){const e=S.epDraft;if(!e||!ids.length)return;
+  if(isToonDraft()){e.body=compose(imgIds(e.body).concat(ids),textOf(e.body));lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body}));render();return;}const body=e.body||"",at=Math.min(e.caret==null?body.length:e.caret,body.length);
   const before=body.slice(0,at),after=body.slice(at),tok=ids.map(i=>`[[그림:${i}]]`).join("\n");
   e.body=before+(before&&!before.endsWith("\n")?"\n":"")+tok+"\n"+(after.startsWith("\n")?after.slice(1):after);
   e.caret=(before+(before&&!before.endsWith("\n")?"\n":"")+tok+"\n").length;e.preview=false;
@@ -505,27 +536,29 @@ async function addEpImages(files){const e=S.epDraft;if(!e)return;captureWriter()
   toast("이미지 넣는 중…");const ids=[];
   try{for(const f of list){const url=URL.createObjectURL(f);try{const im=await loadImgEl(url);ids.push(...await storeSlices(e.id,sliceCanvas(im,900,1600)));}finally{URL.revokeObjectURL(url);}}
     insertTokens(ids);toast(`이미지 ${list.length}장을 넣었어요.`);}catch(err){if(ids.length)insertTokens(ids);toast(errMsg(err));}}
+function moveEpImage(iid,dir){const e=S.epDraft;if(!e)return;captureWriter();const ids=imgIds(e.body),i=ids.indexOf(iid),j=i+dir;if(i<0||j<0||j>=ids.length)return;
+  [ids[i],ids[j]]=[ids[j],ids[i]];e.body=compose(ids,textOf(e.body));lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body}));render();}
 function removeEpImage(iid){const e=S.epDraft;if(!e)return;captureWriter();e.body=String(e.body||"").split("\n").filter(l=>{const m=l.trim().match(IMG_RE);return !(m&&m[1]===iid);}).join("\n");
   lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body}));render();toast("이미지를 뺐어요.");}
 
 /* ---------- views ---------- */
 function vHome(){
   if(!S.loaded)return `<div class="sec"><div class="empty">${S.err?"작품을 불러오지 못했어요. 새로고침해 주세요.":"작품을 불러오는 중이에요…"}</div></div>`;
-  const all=allNovels(),f=n=>S.genre==="전체"||n.genre===S.genre;
+  const all=allNovels().filter(n=>n.kind===S.kind),f=n=>S.genre==="전체"||n.genre===S.genre;
   const live=all.filter(n=>n.epCount>=1),pending=all.length-live.length;
   const pop=live.filter(f).sort(byPop);
   const rising=live.filter(f).filter(n=>n.week>0).sort((a,b)=>b.week-a.week||b.hearts-a.hearts);
   const fresh=live.filter(f).sort((a,b)=>b.updated-a.updated);
   let taste=[];if(S.uid){const gc={};all.forEach(n=>{if(liked(n.id))gc[n.genre]=(gc[n.genre]||0)+1;});
     const fav=Object.keys(gc).sort((a,b)=>gc[b]-gc[a]).slice(0,2);if(fav.length)taste=live.filter(n=>fav.includes(n.genre)&&!liked(n.id)&&n.aid!==S.uid).sort(byPop).slice(0,6);}
-  let h="";const top=pop[0];
+  let h=`<div class="kindtabs" role="tablist">${["novel","toon"].map(k=>`<button type="button" role="tab" data-act="kind" data-k="${k}" aria-selected="${S.kind===k}">${KIND[k]}</button>`).join("")}</div>`;const top=pop[0];
   if(top)h+=`<section class="hero"><button class="card" type="button" data-act="open" data-id="${esc(top.id)}" aria-label="${esc(top.title)} 열기"><div class="cv">${coverHtml(top)}</div></button>
     <div><div class="kick"><b>${top.hearts>0?"인기 1위":"신작"}</b>${esc(top.genre)} · ${top.epCount}화</div><h1>${esc(top.title)}</h1><div class="by">${esc(top.pen)}</div>
     <p>${esc(top.synopsis||"작품 소개가 아직 없어요.")}</p><div class="row"><button class="btn" type="button" data-act="open" data-id="${esc(top.id)}">작품 보기</button>${heartBtn(top)}</div></div></section>`;
   h+=`<div class="chips">${["전체"].concat(GENRES).map(g=>`<button class="chip" type="button" data-act="genre" data-g="${esc(g)}" aria-pressed="${S.genre===g}">${esc(g)}</button>`).join("")}</div>`;
-  if(!live.length)h+=`<div class="sec"><div class="empty"><h3>아직 연재 중인 작품이 없어요</h3>표지와 제목으로 작품을 등록하고 1화를 올리면 인기 소설에 바로 올라와요.<div class="row"><button class="btn" type="button" data-act="newnovel">첫 작품 등록하기</button></div></div></div>`;
+  if(!live.length)h+=`<div class="sec"><div class="empty"><h3>아직 연재 중인 ${KIND[S.kind]}이 없어요</h3>표지와 제목으로 작품을 등록하고 1화를 올리면 인기 목록에 바로 올라와요.<div class="row"><button class="btn" type="button" data-act="newnovel">첫 ${KIND[S.kind]} 등록하기</button></div></div></div>`;
   else{
-    h+=`<section class="sec"><div class="sec-h"><h2>인기 소설</h2><span class="d">하트를 많이 받은 순서</span></div>${pop.length?`<div class="grid">${pop.slice(0,10).map((n,i)=>card(n,i+1)).join("")}</div>`:`<div class="empty">이 장르에는 아직 연재 중인 작품이 없어요.</div>`}</section>`;
+    h+=`<section class="sec"><div class="sec-h"><h2>인기 ${KIND[S.kind]}</h2><span class="d">하트를 많이 받은 순서</span></div>${pop.length?`<div class="grid">${pop.slice(0,10).map((n,i)=>card(n,i+1)).join("")}</div>`:`<div class="empty">이 장르에는 아직 연재 중인 작품이 없어요.</div>`}</section>`;
     if(rising.length)h+=`<section class="sec"><div class="sec-h"><h2>이번 주 급상승</h2><span class="d">최근 7일 하트 순서</span></div><div class="grid">${rising.slice(0,6).map(n=>card(n)).join("")}</div></section>`;
     if(taste.length)h+=`<section class="sec"><div class="sec-h"><h2>취향 저격</h2><span class="d">하트 누른 작품과 같은 장르</span></div><div class="grid">${taste.map(n=>card(n)).join("")}</div></section>`;
     h+=`<section class="sec"><div class="sec-h"><h2>최신 연재</h2><span class="d">새 회차가 올라온 순서</span></div>${fresh.length?`<div class="grid">${fresh.slice(0,S.freshLimit).map(n=>card(n)).join("")}</div>`:`<div class="empty">이 장르에는 아직 연재 중인 작품이 없어요.</div>`}${fresh.length>S.freshLimit?`<div class="more"><button class="btn-soft" type="button" data-act="more">더 보기</button></div>`:""}</section>`;}
@@ -537,7 +570,7 @@ function vSearch(){const q=S.q.toLowerCase();const r=allNovels().filter(n=>(n.ti
 
 function vNovel(){const n=findNovel(S.view.id);if(!n)return notFound();const mine=n.aid===S.uid;const w=S.epDraft&&S.epDraft.id===n.id?S.epDraft:null;
   return `<div class="novel"><aside class="side"><div class="cv">${coverHtml(n)}</div>
-   <div class="row">${n.epCount?`<span class="pill">연재 중</span>`:`<span class="pill off">연재 준비 중</span>`}<span class="cm">${esc(n.genre)}</span></div>
+   <div class="row"><span class="pill kindpill">${KIND[n.kind]}</span>${n.epCount?`<span class="pill">연재 중</span>`:`<span class="pill off">연재 준비 중</span>`}<span class="cm">${esc(n.genre)}</span></div>
    <h1>${esc(n.title)}</h1>
    <div class="meta"><span>${esc(n.pen)}</span><span>총 ${n.epCount}화</span><span>♥ <span data-hc="${esc(n.id)}">${fmtN(n.hearts)}</span></span></div>
    <div class="syn">${esc(n.synopsis||"작품 소개가 아직 없어요.")}</div>
@@ -552,6 +585,20 @@ function vNovel(){const n=findNovel(S.view.id);if(!n)return notFound();const min
   </section></div>`;}
 function vWriter(n,w){if(w.state==="loading")return `<section class="writer" id="writer"><div class="empty">회차를 불러오는 중이에요…</div></section>`;
   const no=w.eid?(n.eps.find(x=>x.id===w.eid)||{}).no:n.epCount+1;
+  if(n.kind==="toon"){const ids=imgIds(w.body);
+  return `<section class="writer toonw" id="writer"><form data-form="ep" novalidate>
+   <div class="wh"><span class="wno">${no}화</span><input id="epTitle" maxlength="60" value="${esc(w.title||"")}" placeholder="제목 (안 적어도 돼요)" aria-label="${no}화 제목"></div>
+   <div class="step"><b>1</b> 웹툰 이미지 <span class="cm">위에서부터 순서대로 보여요 · 여러 장을 한 번에 골라도 돼요</span></div>
+   <div class="wtools"><label class="btn" for="epImg">이미지 올리기</label><input id="epImg" class="sr" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
+    <button class="btn-soft" type="button" data-act="epdraw">그려서 넣기</button></div>
+   ${ids.length?`<ol class="toonlist">${ids.map((i,k)=>`<li><span class="tln">${k+1}</span><img class="toon" data-iid="${i}" alt="${k+1}번째 컷">
+     <div class="tlb"><button type="button" data-act="epimgup" data-iid="${i}"${k===0?" disabled":""} aria-label="위로">▲</button><button type="button" data-act="epimgdown" data-iid="${i}"${k===ids.length-1?" disabled":""} aria-label="아래로">▼</button><button type="button" data-act="epimgdel" data-iid="${i}">빼기</button></div></li>`).join("")}</ol>`
+     :`<div class="empty">아직 이미지가 없어요. 웹툰 회차는 이미지가 1장 이상 있어야 해요.</div>`}
+   <div class="step"><b>2</b> 이미지 아래 글 <span class="cm">선택 · 작가의 말이나 설명</span></div>
+   <textarea id="epText" rows="5" maxlength="20000" placeholder="이미지 아래에 보일 글을 써 주세요. 안 써도 돼요." aria-label="${no}화 이미지 아래 글">${esc(textOf(w.body))}</textarea>
+   <div class="wf"><span class="cc" id="cc">이미지 ${ids.length}장</span><span class="cm" id="autosave">쓰는 내용은 이 기기에 자동으로 임시 저장돼요</span>
+    <button class="btn-text" type="button" data-act="closewriter">닫기</button><button class="btn" type="submit" id="saveEp">${w.eid?`${no}화 저장`:`${no}화 올리기`}</button></div>
+  </form></section>`;}
   return `<section class="writer" id="writer"><form data-form="ep" novalidate>
    <div class="wh"><span class="wno">${no}화</span><input id="epTitle" maxlength="60" value="${esc(w.title||"")}" placeholder="제목 (안 적어도 돼요)" aria-label="${no}화 제목"></div>
    <div class="wtools"><label class="btn-soft" for="epImg">이미지 넣기</label><input id="epImg" class="sr" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
@@ -575,11 +622,13 @@ function vReader(){const n=findNovel(S.view.id);if(!n)return notFound();const i=
     ${next?`<button class="btn" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(next.id)}">${next.no}화 →</button>`:mine?`<button class="btn" type="button" data-act="newep" data-id="${esc(n.id)}">다음 회차 쓰기</button>`:`<span class="cm">마지막 회차예요</span>`}</div></div></article>`;}
 
 function vWrite(){const d=S.draft||{},edit=!!d.id;
-  return `<form class="form" data-form="novel" novalidate><h1>${edit?"작품 수정":"새 작품 등록"}</h1><p class="lead">표지와 소설 이름을 등록하세요. 1화를 올리면 추천 목록에 노출돼요.</p>
+  const k=d.kind==="toon"?"toon":"novel";
+  return `<form class="form" data-form="novel" novalidate><h1>${edit?"작품 수정":"새 작품 등록"}</h1><p class="lead">표지와 작품 이름을 등록하세요. 1화를 올리면 추천 목록에 노출돼요.</p>
+   <div class="kindpick" role="radiogroup" aria-label="작품 종류">${["novel","toon"].map(x=>`<label class="kp${k===x?" on":""}"><input type="radio" name="kind" value="${x}"${k===x?" checked":""}><b>${KIND[x]}</b><span>${x==="toon"?"이미지를 올리고 그 아래에 글을 써요":"글로 연재해요 (원하면 그림도 넣을 수 있어요)"}</span></label>`).join("")}</div>
    <div class="f2"><div class="fld"><label for="cover">표지 <span class="h">필수</span></label>
      <div class="drop${d.preview?" has":""}">${d.preview?`<img src="${esc(d.preview)}" alt="표지 미리보기">`:`<span>이미지를 올리거나<br>직접 그려 보세요</span>`}<input id="cover" type="file" accept="image/png,image/jpeg,image/webp" aria-label="표지 이미지 선택"></div>
      <div class="coverbtns"><label class="btn-soft" for="cover2">이미지 올리기</label><input id="cover2" class="sr" type="file" accept="image/png,image/jpeg,image/webp"><button class="btn" type="button" data-act="draw">${d.preview?"그려서 고치기":"직접 그리기"}</button></div></div>
-    <div><div class="fld"><label for="title">소설 이름 <span class="h">필수 · 40자까지</span></label><input id="title" maxlength="40" value="${esc(d.title||"")}"></div>
+    <div><div class="fld"><label for="title">작품 이름 <span class="h">필수 · 40자까지</span></label><input id="title" maxlength="40" value="${esc(d.title||"")}"></div>
      <div class="fld"><label for="genre">장르</label><select id="genre">${GENRES.map(g=>`<option${(d.genre||"판타지")===g?" selected":""}>${esc(g)}</option>`).join("")}</select></div>
      <div class="fld"><label for="syn">작품 소개 <span class="h">300자까지</span></label><textarea id="syn" rows="6" maxlength="300">${esc(d.synopsis||"")}</textarea></div>
      <div class="row"><button class="btn" type="submit" id="saveNovel">${edit?"저장":"작품 등록"}</button><button class="btn-text" type="button" data-act="${edit?"open":"home"}" data-id="${esc(d.id||"")}">취소</button>
@@ -670,18 +719,20 @@ async function toggleHeart(id){if(!needLogin({act:"heart",id}))return;const n=fi
   try{await API.heart(S.uid,id,!was);if(!was)toast("하트를 보냈어요. 인기 순위에 반영돼요.");}catch(e){toast(errMsg(e));}}
 
 async function submitNovel(){if(S.busy)return;const d=S.draft||{};
-  const title=$("#title").value.trim(),genre=$("#genre").value,synopsis=$("#syn").value.trim();Object.assign(d,{title,genre,synopsis});
-  if(!title){toast("소설 이름을 입력해 주세요.");$("#title").focus();return;}
+  const title=$("#title").value.trim(),genre=$("#genre").value,synopsis=$("#syn").value.trim(),kindEl=document.querySelector('input[name="kind"]:checked'),kind=kindEl&&kindEl.value==="toon"?"toon":"novel";Object.assign(d,{title,genre,synopsis,kind});
+  if(!title){toast("작품 이름을 입력해 주세요.");$("#title").focus();return;}
   if(!d.preview){toast("표지 이미지를 등록해 주세요.");return;}
   S.busy=true;const btn=$("#saveNovel");btn.disabled=true;btn.textContent="저장 중…";
   try{const now=Date.now();let id=d.id;
-    if(id)await API.updateNovel(id,{title,genre,synopsis,cover:d.preview,penName:S.pen});
-    else{id=API.newId();const nd={authorId:S.uid,penName:S.pen,title,genre,synopsis,cover:d.preview,episodes:[],episodeCount:0,heartCount:0,createdAt:now,updatedAt:now};await API.createNovel(id,nd);S.novels[id]=Object.assign({},nd,S.novels[id]||{});}
+    if(id)await API.updateNovel(id,{title,genre,synopsis,kind,cover:d.preview,penName:S.pen});
+    else{id=API.newId();const nd={authorId:S.uid,penName:S.pen,kind,title,genre,synopsis,cover:d.preview,episodes:[],episodeCount:0,heartCount:0,createdAt:now,updatedAt:now};await API.createNovel(id,nd);S.novels[id]=Object.assign({},nd,S.novels[id]||{});}
     S.draft=null;if(d.id){toast("작품 정보를 저장했어요.");go({name:"novel",id});}else{toast("작품을 등록했어요. 바로 1화를 써 보세요!");openEpEditor(id,null);}}
   catch(e){toast(errMsg(e));btn.disabled=false;btn.textContent=d.id?"저장":"작품 등록";}finally{S.busy=false;}}
 
 async function submitEp(){if(S.busy)return;const e=S.epDraft||{},n=findNovel(e.id);if(!n)return;
-  captureWriter();const title=String(e.title||"").trim(),body=String(e.body||"");if(!body.trim()){toast("본문을 입력해 주세요.");if($("#epBody"))$("#epBody").focus();return;}
+  captureWriter();const title=String(e.title||"").trim(),body=String(e.body||"");
+  if(n.kind==="toon"&&!imgIds(body).length){toast("웹툰 회차는 이미지를 1장 이상 올려 주세요.");return;}
+  if(!body.trim()){toast("본문을 입력해 주세요.");if($("#epBody"))$("#epBody").focus();return;}
   S.busy=true;const btn=$("#saveEp");btn.disabled=true;btn.textContent="저장 중…";
   try{const now=Date.now(),eid=e.eid||genId(),first=n.epCount===0&&!e.eid;
     const raw=(S.novels[n.id].episodes||[]).filter(x=>x&&x.id).map(x=>({id:x.id,title:String(x.title||""),at:Number(x.at)||now}));
@@ -723,7 +774,10 @@ function handle(a,id,eid,t){
   switch(a){
    case "home":closeModal();S.q="";$("#q").value="";go({name:"home"});break;
    case "library":closeModal();go({name:"library"});break;
-   case "newnovel":if(!needLogin({act:"newnovel"}))return;S.draft={};go({name:"write"});break;
+   case "newnovel":if(!needLogin({act:"newnovel"}))return;S.draft={kind:S.kind};go({name:"write"});break;
+   case "kind":S.kind=t.dataset.k==="toon"?"toon":"novel";lsSet("mj_kind",S.kind);S.genre="전체";S.freshLimit=12;render();break;
+   case "epimgup":moveEpImage(t.dataset.iid,-1);break;
+   case "epimgdown":moveEpImage(t.dataset.iid,1);break;
    case "theme":setInk(document.documentElement.getAttribute("data-ink")==="dark"?"light":"dark",true);break;
    case "login":authModal("login");break;
    case "signup":authModal("signup");break;
@@ -758,15 +812,16 @@ document.addEventListener("submit",ev=>{const f=ev.target.closest("[data-form]")
   else if(k==="pen"){const v=$("#pen").value.trim().slice(0,16);if(!v){toast("필명을 입력해 주세요.");return;}savePen(v);}
   else if(k==="login"||k==="signup")doAuth(k==="signup");
   else if(k==="novel")submitNovel();else if(k==="ep")submitEp();});
-document.addEventListener("change",async ev=>{if(ev.target.id==="epImg"){const f=ev.target.files;if(f&&f.length)await addEpImages(f);ev.target.value="";return;}
+document.addEventListener("change",async ev=>{if(ev.target.name==="kind"){document.querySelectorAll(".kp").forEach(l=>l.classList.toggle("on",l.querySelector("input").checked));return;}
+  if(ev.target.id==="epImg"){const f=ev.target.files;if(f&&f.length)await addEpImages(f);ev.target.value="";return;}
   if(ev.target.id!=="cover"&&ev.target.id!=="cover2")return;const file=ev.target.files&&ev.target.files[0];if(!file)return;
   if(!/^image\/(png|jpeg|webp)$/.test(file.type)){toast("PNG, JPG, WEBP 이미지만 쓸 수 있어요.");return;}
-  try{const url=await makeCover(file);const d=S.draft||(S.draft={});Object.assign(d,{title:$("#title").value,genre:$("#genre").value,synopsis:$("#syn").value,preview:url});render();}
+  try{const url=await makeCover(file);const d=S.draft||(S.draft={});const kk=document.querySelector('input[name="kind"]:checked');Object.assign(d,{title:$("#title").value,genre:$("#genre").value,synopsis:$("#syn").value,kind:kk?kk.value:d.kind,preview:url});render();}
   catch(e){toast("이미지를 읽지 못했어요. 다른 파일을 골라 주세요.");}});
 let autoT;
-document.addEventListener("input",ev=>{if(ev.target.id!=="epBody"&&ev.target.id!=="epTitle")return;const b=$("#epBody"),t=$("#epTitle");
+document.addEventListener("input",ev=>{if(ev.target.id!=="epBody"&&ev.target.id!=="epTitle"&&ev.target.id!=="epText")return;const b=$("#epBody"),t=$("#epTitle"),x=$("#epText");
   const c=$("#cc");if(c&&b)c.textContent=fmtN(b.value.length)+"자";
-  const e=S.epDraft;if(!e)return;e.title=t?t.value:"";e.body=b?b.value:"";clearTimeout(autoT);
+  const e=S.epDraft;if(!e)return;e.title=t?t.value:"";if(b)e.body=b.value;if(x)e.body=compose(imgIds(e.body),x.value);clearTimeout(autoT);
   autoT=setTimeout(()=>{lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title,body:e.body}));const n=$("#autosave");if(n){const d=new Date();n.textContent=`임시 저장됨 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}},600);});
 document.addEventListener("keydown",ev=>{if(ev.key==="Escape"&&$("#modal").innerHTML){closeModal();if(askRes){askRes(false);askRes=null;}}});
 
@@ -828,7 +883,7 @@ function painterHtml(title){
    </aside></div>`;}
 
 function openPainter(onDone){P.onDone=typeof onDone==="function"?onDone:null;const d=P.onDone?{}:(S.draft||(S.draft={}));const ti=P.onDone?null:$("#title");
-  if(ti){d.title=ti.value;d.genre=$("#genre").value;d.synopsis=$("#syn").value;}
+  if(ti){d.title=ti.value;d.genre=$("#genre").value;d.synopsis=$("#syn").value;const kk=document.querySelector('input[name="kind"]:checked');if(kk)d.kind=kk.value;}
   P.undo=[];P.redo=[];P.down=false;
   const root=document.createElement("div");root.id="painter";root.className="pt";root.setAttribute("role","dialog");root.setAttribute("aria-label",P.onDone?"그림 그리기":"표지 그리기");
   root.innerHTML=painterHtml(d.title||"");document.body.appendChild(root);document.body.style.overflow="hidden";
