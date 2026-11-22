@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function heartPath(nid) { return /databases/$(database)/documents/hearts/$(request.auth.uid + '_' + nid); }
+
+    // 필명
+    match /users/{uid} {
+      allow read: if true;
+      allow write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // 작품 (목록은 누구나 보고, 열어서 읽는 건 로그인 필요)
+    match /novels/{nid} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.heartCount == 0;
+      allow update: if signedIn() && (
+        // 작가 본인: 하트 수는 못 바꿈
+        (resource.data.authorId == request.auth.uid
+          && request.resource.data.authorId == resource.data.authorId
+          && request.resource.data.heartCount == resource.data.heartCount)
+        ||
+        // 다른 사람: 하트 수만 +1 / -1 (하트 기록과 함께)
+        (resource.data.authorId != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['heartCount'])
+          && ((request.resource.data.heartCount == resource.data.heartCount + 1
+                && !exists(heartPath(nid)) && existsAfter(heartPath(nid)))
+           || (request.resource.data.heartCount == resource.data.heartCount - 1
+                && exists(heartPath(nid)) && !existsAfter(heartPath(nid)))))
+      );
+      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+
+      // 회차 본문: 로그인해야 읽기, 작가만 쓰기
+      match /episodes/{eid} {
+        allow read: if signedIn();
+        allow write: if signedIn()
+          && get(/databases/$(database)/documents/novels/$(nid)).data.authorId == request.auth.uid;
+      }
+    }
+
+    // 하트 기록 (1인 1작품 1개)
+    match /hearts/{hid} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && hid == request.auth.uid + '_' + request.resource.data.nid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+  }
+}
