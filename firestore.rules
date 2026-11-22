@@ -10,7 +10,7 @@ service cloud.firestore {
       allow write: if signedIn() && request.auth.uid == uid;
     }
 
-    // 작품 (목록은 누구나 보고, 열어서 읽는 건 로그인 필요)
+    // 작품: 누구나 보기
     match /novels/{nid} {
       allow read: if true;
       allow create: if signedIn()
@@ -32,9 +32,9 @@ service cloud.firestore {
       );
       allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
 
-      // 회차 본문: 로그인해야 읽기, 작가만 쓰기
+      // 회차 본문: 누구나 읽기, 작가만 쓰기
       match /episodes/{eid} {
-        allow read: if signedIn();
+        allow read: if true;
         allow write: if signedIn()
           && get(/databases/$(database)/documents/novels/$(nid)).data.authorId == request.auth.uid;
       }
