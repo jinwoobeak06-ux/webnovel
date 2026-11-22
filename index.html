@@ -227,6 +227,20 @@ h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
 #epText:focus{outline:none;border-color:var(--ink);background:var(--card)}
 
 .kbadge{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.72);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+.blks{display:flex;flex-direction:column;gap:14px}
+.blk{border:1.5px solid var(--line);border-radius:16px;padding:14px 16px;background:var(--bg)}
+.blkh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-weight:700;font-size:14px}
+.blkh .btn-text{font-size:13px;padding:4px 6px}
+.blkh .btn-text[disabled]{opacity:.35;cursor:default}
+.blkimgs{max-width:480px;margin-bottom:10px;border-radius:10px;overflow:hidden}
+.bi{position:relative}.bi button{position:absolute;right:8px;top:8px;border:0;background:rgba(0,0,0,.7);color:#fff;font-size:12px;padding:4px 10px;border-radius:999px}
+.blkadd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:12px;border:2px dashed var(--line);border-radius:12px}
+.blkadd .btn-soft{cursor:pointer;padding:7px 14px;font-size:14px}
+.blkadd .cm{font-size:12px}
+.blktext{width:100%;border:1.5px solid transparent;background:var(--soft);border-radius:12px;padding:12px 14px;font-family:var(--serif);font-size:16px;line-height:1.85;resize:vertical}
+.blktext:focus{outline:none;border-color:var(--ink);background:var(--card)}
+.addblk{display:block;width:100%;margin:14px 0 6px;padding:14px;border:2px dashed var(--ink);border-radius:16px;background:none;font-weight:800;font-size:16px}
+.addblk:hover{background:var(--soft)}
 /* in-episode images */
 .wtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .wtools .btn-soft{padding:8px 14px;font-size:14px;cursor:pointer}
@@ -506,12 +520,17 @@ function makeLocalAPI(){
 
 /* ---------- 글 속 이미지 (웹툰처럼) ----------
    본문 안의 [[그림:아이디]] 줄이 이미지 자리예요. 이미지는 따로 저장되고, 긴 이미지는 자동으로 잘라 이어 붙여요. */
-const IMG_RE=/^\[\[그림:([a-z0-9]{4,40})\]\]$/;
+const IMG_RE=/^\[\[그림:([a-z0-9]{4,40})\]\]$/,BLK="[[칸]]";
+function parseBlocks(body){const out=[];let cur=null;const nb=()=>{cur={imgs:[],text:""};out.push(cur);};
+  String(body||"").split("\n").forEach(l=>{const t=l.trim();if(t===BLK){nb();return;}const m=t.match(IMG_RE);
+    if(m){if(!cur||cur.text.trim())nb();cur.imgs.push(m[1]);return;}if(!cur)nb();cur.text+=(cur.text?"\n":"")+l;});
+  out.forEach(b=>b.text=b.text.replace(/^\n+|\n+$/g,""));return out.length?out:[{imgs:[],text:""}];}
+function serBlocks(bs){return bs.map(b=>[BLK].concat(b.imgs.map(i=>`[[그림:${i}]]`),b.text?[b.text]:[]).join("\n")).join("\n");}
 const imgCache={};
 function imgIds(body){return String(body||"").split("\n").map(l=>l.trim().match(IMG_RE)).filter(Boolean).map(m=>m[1]);}
 function bodyHtml(body){const out=[];let buf=[];
   const flush=()=>{const t=buf.join("\n").replace(/^\s*\n|\n\s*$/g,"");if(t.trim())out.push(`<div class="prose">${esc(t)}</div>`);buf=[];};
-  String(body||"").split("\n").forEach(l=>{const m=l.trim().match(IMG_RE);if(m){flush();out.push(`<img class="toon" data-iid="${m[1]}" alt="">`);}else buf.push(l);});flush();
+  String(body||"").split("\n").forEach(l=>{if(l.trim()===BLK){flush();return;}const m=l.trim().match(IMG_RE);if(m){flush();out.push(`<img class="toon" data-iid="${m[1]}" alt="">`);}else buf.push(l);});flush();
   return out.join("");}
 async function getImg(nid,iid){if(imgCache[iid])return imgCache[iid];try{const r=await API.getImage(nid,iid);const src=r&&safeImg(r.src);if(src)imgCache[iid]=src;return src||"";}catch(e){return "";}}
 function hydrateImgs(root,nid){if(!nid)return;root.querySelectorAll("img[data-iid]:not([src])").forEach(async im=>{const src=await getImg(nid,im.dataset.iid);
@@ -521,12 +540,14 @@ function sliceCanvas(src,maxW,sliceH){const sw=src.naturalWidth||src.width,sh=sr
   for(let y=0;y<h;y+=sliceH){const ph=Math.min(sliceH,h-y),c=document.createElement("canvas");c.width=w;c.height=ph;const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,w,ph);x.drawImage(src,0,-y,w,h);out.push(c);}
   return out;}
 async function storeSlices(nid,canvases){const ids=[];for(const c of canvases){const iid=genId(),src=c.toDataURL("image/jpeg",0.84);await API.saveImage(nid,iid,src);imgCache[iid]=src;ids.push(iid);}return ids;}
-function textOf(body){return String(body||"").split("\n").filter(l=>!IMG_RE.test(l.trim())).join("\n").replace(/^\n+/,"");}
+function textOf(body){return String(body||"").split("\n").filter(l=>!IMG_RE.test(l.trim())&&l.trim()!==BLK).join("\n").replace(/^\n+/,"");}
 function compose(ids,text){const t=String(text||"");return ids.map(i=>`[[그림:${i}]]`).join("\n")+(t.trim()?(ids.length?"\n":"")+t:"");}
 const isToonDraft=()=>{const e=S.epDraft;const n=e&&findNovel(e.id);return !!(n&&n.kind==="toon");};
-function captureWriter(){const e=S.epDraft;if(!e)return;const b=$("#epBody"),t=$("#epTitle"),x=$("#epText");if(b){e.body=b.value;e.caret=b.selectionStart;}if(x)e.body=compose(imgIds(e.body),x.value);if(t)e.title=t.value;}
+function captureWriter(){const e=S.epDraft;if(!e)return;const b=$("#epBody"),t=$("#epTitle"),x=$("#epText");if(b){e.body=b.value;e.caret=b.selectionStart;}if(x)e.body=compose(imgIds(e.body),x.value);if(t)e.title=t.value;
+  if(e.blocks){document.querySelectorAll(".blktext").forEach(ta=>{const k=+ta.dataset.b;if(e.blocks[k])e.blocks[k].text=ta.value;});e.body=serBlocks(e.blocks);}}
+function saveDraftNow(){const e=S.epDraft;if(e)lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body||""}));}
 function insertTokens(ids){const e=S.epDraft;if(!e||!ids.length)return;
-  if(isToonDraft()){e.body=compose(imgIds(e.body).concat(ids),textOf(e.body));lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body}));render();return;}const body=e.body||"",at=Math.min(e.caret==null?body.length:e.caret,body.length);
+  if(isToonDraft()){if(!e.blocks)e.blocks=parseBlocks(e.body);const k=Math.min(Math.max(0,e.tb|0),e.blocks.length-1);e.blocks[k].imgs.push(...ids);e.body=serBlocks(e.blocks);saveDraftNow();render();return;}const body=e.body||"",at=Math.min(e.caret==null?body.length:e.caret,body.length);
   const before=body.slice(0,at),after=body.slice(at),tok=ids.map(i=>`[[그림:${i}]]`).join("\n");
   e.body=before+(before&&!before.endsWith("\n")?"\n":"")+tok+"\n"+(after.startsWith("\n")?after.slice(1):after);
   e.caret=(before+(before&&!before.endsWith("\n")?"\n":"")+tok+"\n").length;e.preview=false;
@@ -538,7 +559,8 @@ async function addEpImages(files){const e=S.epDraft;if(!e)return;captureWriter()
     insertTokens(ids);toast(`이미지 ${list.length}장을 넣었어요.`);}catch(err){if(ids.length)insertTokens(ids);toast(errMsg(err));}}
 function moveEpImage(iid,dir){const e=S.epDraft;if(!e)return;captureWriter();const ids=imgIds(e.body),i=ids.indexOf(iid),j=i+dir;if(i<0||j<0||j>=ids.length)return;
   [ids[i],ids[j]]=[ids[j],ids[i]];e.body=compose(ids,textOf(e.body));lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body}));render();}
-function removeEpImage(iid){const e=S.epDraft;if(!e)return;captureWriter();e.body=String(e.body||"").split("\n").filter(l=>{const m=l.trim().match(IMG_RE);return !(m&&m[1]===iid);}).join("\n");
+function removeEpImage(iid){const e=S.epDraft;if(!e)return;captureWriter();
+  if(e.blocks){e.blocks.forEach(b=>b.imgs=b.imgs.filter(x=>x!==iid));e.body=serBlocks(e.blocks);saveDraftNow();render();toast("이미지를 뺐어요.");return;}e.body=String(e.body||"").split("\n").filter(l=>{const m=l.trim().match(IMG_RE);return !(m&&m[1]===iid);}).join("\n");
   lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body}));render();toast("이미지를 뺐어요.");}
 
 /* ---------- views ---------- */
@@ -585,18 +607,19 @@ function vNovel(){const n=findNovel(S.view.id);if(!n)return notFound();const min
   </section></div>`;}
 function vWriter(n,w){if(w.state==="loading")return `<section class="writer" id="writer"><div class="empty">회차를 불러오는 중이에요…</div></section>`;
   const no=w.eid?(n.eps.find(x=>x.id===w.eid)||{}).no:n.epCount+1;
-  if(n.kind==="toon"){const ids=imgIds(w.body);
+  if(n.kind==="toon"){if(!w.blocks)w.blocks=parseBlocks(w.body);const bs=w.blocks,nimg=bs.reduce((c,b)=>c+b.imgs.length,0);
   return `<section class="writer toonw" id="writer"><form data-form="ep" novalidate>
    <div class="wh"><span class="wno">${no}화</span><input id="epTitle" maxlength="60" value="${esc(w.title||"")}" placeholder="제목 (안 적어도 돼요)" aria-label="${no}화 제목"></div>
-   <div class="step"><b>1</b> 웹툰 이미지 <span class="cm">위에서부터 순서대로 보여요 · 여러 장을 한 번에 골라도 돼요</span></div>
-   <div class="wtools"><label class="btn" for="epImg">이미지 올리기</label><input id="epImg" class="sr" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
-    <button class="btn-soft" type="button" data-act="epdraw">그려서 넣기</button></div>
-   ${ids.length?`<ol class="toonlist">${ids.map((i,k)=>`<li><span class="tln">${k+1}</span><img class="toon" data-iid="${i}" alt="${k+1}번째 컷">
-     <div class="tlb"><button type="button" data-act="epimgup" data-iid="${i}"${k===0?" disabled":""} aria-label="위로">▲</button><button type="button" data-act="epimgdown" data-iid="${i}"${k===ids.length-1?" disabled":""} aria-label="아래로">▼</button><button type="button" data-act="epimgdel" data-iid="${i}">빼기</button></div></li>`).join("")}</ol>`
-     :`<div class="empty">아직 이미지가 없어요. 웹툰 회차는 이미지가 1장 이상 있어야 해요.</div>`}
-   <div class="step"><b>2</b> 이미지 아래 글 <span class="cm">선택 · 작가의 말이나 설명</span></div>
-   <textarea id="epText" rows="5" maxlength="20000" placeholder="이미지 아래에 보일 글을 써 주세요. 안 써도 돼요." aria-label="${no}화 이미지 아래 글">${esc(textOf(w.body))}</textarea>
-   <div class="wf"><span class="cc" id="cc">이미지 ${ids.length}장</span><span class="cm" id="autosave">쓰는 내용은 이 기기에 자동으로 임시 저장돼요</span>
+   <p class="cm" style="margin:0 0 16px">칸마다 <b>이미지(넣고 싶을 때만)</b>와 <b>그 아래 글</b>이 들어가요. "+ 칸 추가"로 계속 이어서 만들 수 있어요.</p>
+   <div class="blks">${bs.map((bl,k)=>`<div class="blk">
+     <div class="blkh"><span>${k+1}번째 칸</span><div class="row"><button class="btn-text" type="button" data-act="blkup" data-b="${k}"${k===0?" disabled":""}>▲ 위로</button><button class="btn-text" type="button" data-act="blkdown" data-b="${k}"${k===bs.length-1?" disabled":""}>▼ 아래로</button>${bs.length>1?`<button class="btn-text" type="button" data-act="blkdel" data-b="${k}">칸 삭제</button>`:""}</div></div>
+     ${bl.imgs.length?`<div class="blkimgs">${bl.imgs.map(i=>`<div class="bi"><img class="toon" data-iid="${i}" alt=""><button type="button" data-act="epimgdel" data-iid="${i}">이미지 빼기</button></div>`).join("")}</div>`:""}
+     <div class="blkadd"><label class="btn-soft" for="blkImg${k}">${bl.imgs.length?"이미지 더 넣기":"이미지 넣기"}</label><input id="blkImg${k}" class="sr blkfile" data-b="${k}" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
+      <button class="btn-soft" type="button" data-act="epdraw" data-b="${k}">그려서 넣기</button>${bl.imgs.length?"":`<span class="cm">이미지는 안 넣어도 돼요</span>`}</div>
+     <textarea class="blktext" data-b="${k}" rows="4" maxlength="20000" placeholder="${bl.imgs.length?"이미지 아래에 보일 글":"이 칸의 글"} (안 써도 돼요)" aria-label="${k+1}번째 칸 글">${esc(bl.text)}</textarea>
+   </div>`).join("")}</div>
+   <button class="addblk" type="button" data-act="blkadd">+ 칸 추가</button>
+   <div class="wf"><span class="cc" id="cc">${bs.length}칸 · 이미지 ${nimg}장</span><span class="cm" id="autosave">쓰는 내용은 이 기기에 자동으로 임시 저장돼요</span>
     <button class="btn-text" type="button" data-act="closewriter">닫기</button><button class="btn" type="submit" id="saveEp">${w.eid?`${no}화 저장`:`${no}화 올리기`}</button></div>
   </form></section>`;}
   return `<section class="writer" id="writer"><form data-form="ep" novalidate>
@@ -624,7 +647,7 @@ function vReader(){const n=findNovel(S.view.id);if(!n)return notFound();const i=
 function vWrite(){const d=S.draft||{},edit=!!d.id;
   const k=d.kind==="toon"?"toon":"novel";
   return `<form class="form" data-form="novel" novalidate><h1>${edit?"작품 수정":"새 작품 등록"}</h1><p class="lead">표지와 작품 이름을 등록하세요. 1화를 올리면 추천 목록에 노출돼요.</p>
-   <div class="kindpick" role="radiogroup" aria-label="작품 종류">${["novel","toon"].map(x=>`<label class="kp${k===x?" on":""}"><input type="radio" name="kind" value="${x}"${k===x?" checked":""}><b>${KIND[x]}</b><span>${x==="toon"?"이미지를 올리고 그 아래에 글을 써요":"글로 연재해요 (원하면 그림도 넣을 수 있어요)"}</span></label>`).join("")}</div>
+   <div class="kindpick" role="radiogroup" aria-label="작품 종류">${["novel","toon"].map(x=>`<label class="kp${k===x?" on":""}"><input type="radio" name="kind" value="${x}"${k===x?" checked":""}><b>${KIND[x]}</b><span>${x==="toon"?"이미지와 그 아래 글을 한 칸씩 이어 붙여요 (이미지는 원하는 칸에만)":"글로 연재해요 (원하면 그림도 넣을 수 있어요)"}</span></label>`).join("")}</div>
    <div class="f2"><div class="fld"><label for="cover">표지 <span class="h">필수</span></label>
      <div class="drop${d.preview?" has":""}">${d.preview?`<img src="${esc(d.preview)}" alt="표지 미리보기">`:`<span>이미지를 올리거나<br>직접 그려 보세요</span>`}<input id="cover" type="file" accept="image/png,image/jpeg,image/webp" aria-label="표지 이미지 선택"></div>
      <div class="coverbtns"><label class="btn-soft" for="cover2">이미지 올리기</label><input id="cover2" class="sr" type="file" accept="image/png,image/jpeg,image/webp"><button class="btn" type="button" data-act="draw">${d.preview?"그려서 고치기":"직접 그리기"}</button></div></div>
@@ -731,7 +754,7 @@ async function submitNovel(){if(S.busy)return;const d=S.draft||{};
 
 async function submitEp(){if(S.busy)return;const e=S.epDraft||{},n=findNovel(e.id);if(!n)return;
   captureWriter();const title=String(e.title||"").trim(),body=String(e.body||"");
-  if(n.kind==="toon"&&!imgIds(body).length){toast("웹툰 회차는 이미지를 1장 이상 올려 주세요.");return;}
+  if(!textOf(body).trim()&&!imgIds(body).length){toast(n.kind==="toon"?"이미지나 글을 하나 이상 넣어 주세요.":"본문을 입력해 주세요.");if($("#epBody"))$("#epBody").focus();return;}
   if(!body.trim()){toast("본문을 입력해 주세요.");if($("#epBody"))$("#epBody").focus();return;}
   S.busy=true;const btn=$("#saveEp");btn.disabled=true;btn.textContent="저장 중…";
   try{const now=Date.now(),eid=e.eid||genId(),first=n.epCount===0&&!e.eid;
@@ -776,6 +799,10 @@ function handle(a,id,eid,t){
    case "library":closeModal();go({name:"library"});break;
    case "newnovel":if(!needLogin({act:"newnovel"}))return;S.draft={kind:S.kind};go({name:"write"});break;
    case "kind":S.kind=t.dataset.k==="toon"?"toon":"novel";lsSet("mj_kind",S.kind);S.genre="전체";S.freshLimit=12;render();break;
+   case "blkadd":{const e=S.epDraft;if(!e)return;captureWriter();if(!e.blocks)e.blocks=parseBlocks(e.body);e.blocks.push({imgs:[],text:""});e.body=serBlocks(e.blocks);saveDraftNow();render();
+     const l=document.querySelectorAll(".blk");if(l.length){l[l.length-1].scrollIntoView({behavior:"smooth",block:"center"});}break;}
+   case "blkdel":{const e=S.epDraft;if(!e||!e.blocks)return;captureWriter();e.blocks.splice(+t.dataset.b,1);if(!e.blocks.length)e.blocks.push({imgs:[],text:""});e.body=serBlocks(e.blocks);saveDraftNow();render();break;}
+   case "blkup":case "blkdown":{const e=S.epDraft;if(!e||!e.blocks)return;captureWriter();const i=+t.dataset.b,j=i+(a==="blkup"?-1:1);if(j<0||j>=e.blocks.length)return;[e.blocks[i],e.blocks[j]]=[e.blocks[j],e.blocks[i]];e.body=serBlocks(e.blocks);saveDraftNow();render();break;}
    case "epimgup":moveEpImage(t.dataset.iid,-1);break;
    case "epimgdown":moveEpImage(t.dataset.iid,1);break;
    case "theme":setInk(document.documentElement.getAttribute("data-ink")==="dark"?"light":"dark",true);break;
@@ -785,7 +812,7 @@ function handle(a,id,eid,t){
    case "closewriter":S.epDraft=null;render();break;
    case "eppreview":if(!S.epDraft)return;captureWriter();S.epDraft.preview=!S.epDraft.preview;render();break;
    case "epimgdel":removeEpImage(t.dataset.iid);break;
-   case "epdraw":{if(!S.epDraft)return;captureWriter();const nid=S.epDraft.id;
+   case "epdraw":{if(!S.epDraft)return;captureWriter();if(t.dataset.b!=null)S.epDraft.tb=+t.dataset.b;const nid=S.epDraft.id;
      openPainter(async cv=>{try{const ids=await storeSlices(nid,sliceCanvas(cv,900,1600));insertTokens(ids);toast("그린 그림을 넣었어요.");}catch(err){toast(errMsg(err));}});break;}
    case "account":accountModal();break;
    case "editpen":penModal();break;
@@ -813,13 +840,15 @@ document.addEventListener("submit",ev=>{const f=ev.target.closest("[data-form]")
   else if(k==="login"||k==="signup")doAuth(k==="signup");
   else if(k==="novel")submitNovel();else if(k==="ep")submitEp();});
 document.addEventListener("change",async ev=>{if(ev.target.name==="kind"){document.querySelectorAll(".kp").forEach(l=>l.classList.toggle("on",l.querySelector("input").checked));return;}
+  if(ev.target.classList&&ev.target.classList.contains("blkfile")){const f=ev.target.files;if(S.epDraft)S.epDraft.tb=+ev.target.dataset.b;if(f&&f.length)await addEpImages(f);ev.target.value="";return;}
   if(ev.target.id==="epImg"){const f=ev.target.files;if(f&&f.length)await addEpImages(f);ev.target.value="";return;}
   if(ev.target.id!=="cover"&&ev.target.id!=="cover2")return;const file=ev.target.files&&ev.target.files[0];if(!file)return;
   if(!/^image\/(png|jpeg|webp)$/.test(file.type)){toast("PNG, JPG, WEBP 이미지만 쓸 수 있어요.");return;}
   try{const url=await makeCover(file);const d=S.draft||(S.draft={});const kk=document.querySelector('input[name="kind"]:checked');Object.assign(d,{title:$("#title").value,genre:$("#genre").value,synopsis:$("#syn").value,kind:kk?kk.value:d.kind,preview:url});render();}
   catch(e){toast("이미지를 읽지 못했어요. 다른 파일을 골라 주세요.");}});
 let autoT;
-document.addEventListener("input",ev=>{if(ev.target.id!=="epBody"&&ev.target.id!=="epTitle"&&ev.target.id!=="epText")return;const b=$("#epBody"),t=$("#epTitle"),x=$("#epText");
+document.addEventListener("input",ev=>{if(ev.target.classList&&ev.target.classList.contains("blktext")){captureWriter();clearTimeout(autoT);autoT=setTimeout(()=>{saveDraftNow();const n=$("#autosave");if(n){const d=new Date();n.textContent=`임시 저장됨 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}},600);return;}
+  if(ev.target.id!=="epBody"&&ev.target.id!=="epTitle"&&ev.target.id!=="epText")return;const b=$("#epBody"),t=$("#epTitle"),x=$("#epText");
   const c=$("#cc");if(c&&b)c.textContent=fmtN(b.value.length)+"자";
   const e=S.epDraft;if(!e)return;e.title=t?t.value:"";if(b)e.body=b.value;if(x)e.body=compose(imgIds(e.body),x.value);clearTimeout(autoT);
   autoT=setTimeout(()=>{lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title,body:e.body}));const n=$("#autosave");if(n){const d=new Date();n.textContent=`임시 저장됨 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}},600);});
