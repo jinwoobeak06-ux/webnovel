@@ -241,6 +241,19 @@ h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
 .blktext:focus{outline:none;border-color:var(--ink);background:var(--card)}
 .addblk{display:block;width:100%;margin:14px 0 6px;padding:14px;border:2px dashed var(--ink);border-radius:16px;background:none;font-weight:800;font-size:16px}
 .addblk:hover{background:var(--soft)}
+/* comments */
+.cmts{margin-top:48px}
+.cmts h3{font-size:20px;font-weight:800;margin-bottom:14px}
+.cmtform{background:var(--soft);border-radius:16px;padding:14px;margin-bottom:18px}
+.cmtform textarea{width:100%;border:0;background:transparent;resize:vertical;font-size:15px;line-height:1.7;outline:none}
+.cmtform .row{justify-content:space-between;margin-top:6px}
+.cmtlist{list-style:none;margin:0;padding:0}
+.cmt{padding:14px 2px;border-bottom:1px solid var(--line)}
+.cmh{display:flex;align-items:center;gap:8px;font-size:14px}
+.cmh .btn-text{margin-left:auto;font-size:12px;padding:2px 4px}
+.cmh .pill{font-size:11px;padding:1px 8px}
+.cmt p{margin:6px 0 0;white-space:pre-wrap;word-break:break-word;line-height:1.7}
+.cmtempty{color:var(--sub);padding:18px 2px}
 /* in-episode images */
 .wtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .wtools .btn-soft{padding:8px 14px;font-size:14px;cursor:pointer}
@@ -451,7 +464,10 @@ async function makeFirebaseAPI(){
     signIn:async(id,pw)=>{await A.signInWithEmailAndPassword(auth,idMail(id),pw);},
     signOut:()=>A.signOut(auth),
     getUser:async uid=>{const d=await getDoc(doc(db,"users",uid));return d.exists()?d.data():null;},
-    setUser:(uid,data)=>setDoc(doc(db,"users",uid),data),
+    setUser:(uid,data)=>setDoc(doc(db,"users",uid),data,{merge:true}),
+    watchUsers:cb=>onSnapshot(collection(db,"users"),s=>{const m={};s.forEach(d=>m[d.id]=d.data());cb(m);},()=>{}),
+    addComment:(uid,cid,c)=>setDoc(doc(db,"users",uid),{cm:{[cid]:c}},{merge:true}),
+    delComment:(uid,cid)=>updateDoc(doc(db,"users",uid),{["cm."+cid]:F.deleteField()}),
     watchNovels:(cb,err)=>onSnapshot(query(collection(db,"novels"),limit(500)),s=>{const m={};s.forEach(d=>m[d.id]=d.data());cb(m);},err),
     watchWeek:cb=>onSnapshot(query(collection(db,"hearts"),where("createdAt",">=",Date.now()-WEEK)),s=>{const w={};s.forEach(d=>{const n=d.data().nid;if(n)w[n]=(w[n]||0)+1;});cb(w);},()=>{}),
     watchMine:(uid,cb)=>onSnapshot(query(collection(db,"hearts"),where("uid","==",uid)),s=>{const set=new Set();s.forEach(d=>set.add(d.data().nid));cb(set);},()=>{}),
@@ -479,10 +495,11 @@ function makeLocalAPI(){
       put:async(k,v)=>{const d=await idbOpen;if(!d){mem.set(k,v);return;}const t=d.transaction("kv","readwrite");t.objectStore("kv").put(v,k);await new Promise((res,rej)=>{t.oncomplete=res;t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error||{code:"quota"});});},
       del:async k=>{const d=await idbOpen;if(!d){mem.delete(k);return;}const t=d.transaction("kv","readwrite");t.objectStore("kv").delete(k);await new Promise((res,rej)=>{t.oncomplete=res;t.onerror=()=>rej(t.error);});},
       all:async pre=>{const d=await idbOpen;if(!d)return [...mem].filter(([k])=>k.startsWith(pre));const s=d.transaction("kv").objectStore("kv"),rg=IDBKeyRange.bound(pre,pre+"￿");const [ks,vs]=await Promise.all([req(s.getAllKeys(rg)),req(s.getAll(rg))]);return ks.map((k,i)=>[k,vs[i]]);}};
-  const L={novels:new Set(),week:new Set(),mine:new Set()};let authCb=null;
+  const L={novels:new Set(),week:new Set(),mine:new Set(),users:new Set()};let authCb=null;
   const bc=("BroadcastChannel" in window)?new BroadcastChannel("mukgwajongi"):null;
   async function emit(){const ns=await kv.all("novel:"),hs=await kv.all("heart:"),m={},w={},now=Date.now();
     ns.forEach(([k,v])=>m[k.slice(6)]=v);hs.forEach(([,v])=>{if(now-v.createdAt<WEEK)w[v.nid]=(w[v.nid]||0)+1;});
+    if(L.users.size){const us={};(await kv.all("user:")).forEach(([k,v])=>us[k.slice(5)]=v);L.users.forEach(cb=>cb(us));}
     L.novels.forEach(cb=>cb(m));L.week.forEach(cb=>cb(w));L.mine.forEach(x=>{const s=new Set();hs.forEach(([,v])=>{if(v.uid===x.uid)s.add(v.nid);});x.cb(s);});}
   const changed=()=>{emit();if(bc)bc.postMessage(1);};
   if(bc)bc.onmessage=()=>emit();
@@ -500,7 +517,10 @@ function makeLocalAPI(){
     signIn:async(id,pw)=>{const a=await kv.get("acct:"+id);if(!a||a.hash!==await hashPw(pw,a.salt))throw {code:"auth/invalid-credential"};setSess({uid:a.uid,loginId:id});},
     signOut:async()=>setSess(null),
     getUser:uid=>kv.get("user:"+uid),
-    setUser:(uid,data)=>kv.put("user:"+uid,data),
+    setUser:async(uid,data)=>{const v=(await kv.get("user:"+uid))||{};await kv.put("user:"+uid,Object.assign(v,data));changed();},
+    watchUsers:cb=>{L.users.add(cb);emit().catch(()=>{});return ()=>L.users.delete(cb);},
+    addComment:async(uid,cid,c)=>{const v=(await kv.get("user:"+uid))||{};v.cm=Object.assign({},v.cm,{[cid]:c});await kv.put("user:"+uid,v);changed();},
+    delComment:async(uid,cid)=>{const v=(await kv.get("user:"+uid))||{};if(v.cm)delete v.cm[cid];await kv.put("user:"+uid,v);changed();},
     watchNovels:(cb,err)=>{L.novels.add(cb);emit().catch(err);return ()=>L.novels.delete(cb);},
     watchWeek:cb=>{L.week.add(cb);emit().catch(()=>{});return ()=>L.week.delete(cb);},
     watchMine:(uid,cb)=>{const x={uid,cb};L.mine.add(x);emit().catch(()=>{});return ()=>L.mine.delete(x);},
@@ -562,6 +582,26 @@ function moveEpImage(iid,dir){const e=S.epDraft;if(!e)return;captureWriter();con
 function removeEpImage(iid){const e=S.epDraft;if(!e)return;captureWriter();
   if(e.blocks){e.blocks.forEach(b=>b.imgs=b.imgs.filter(x=>x!==iid));e.body=serBlocks(e.blocks);saveDraftNow();render();toast("이미지를 뺐어요.");return;}e.body=String(e.body||"").split("\n").filter(l=>{const m=l.trim().match(IMG_RE);return !(m&&m[1]===iid);}).join("\n");
   lsSet(draftKey(e.id,e.eid),JSON.stringify({title:e.title||"",body:e.body}));render();toast("이미지를 뺐어요.");}
+
+/* ---------- 댓글 ----------
+   댓글은 쓴 사람의 users 문서 안(cm)에 저장돼요. 누구나 읽고, 자기 댓글만 쓰고 지울 수 있어요. */
+function epComments(nid,eid){const out=[];for(const uid in S.users){const u=S.users[uid]||{},cm=u.cm&&typeof u.cm==="object"?u.cm:{};
+    for(const cid in cm){const c=cm[cid];if(c&&c.n===nid&&c.e===eid&&typeof c.t==="string")out.push({cid,uid,pen:String(u.penName||"익명").slice(0,16),t:c.t.slice(0,500),at:Number(c.at)||0});}}
+  return out.sort((a,b)=>a.at-b.at);}
+function fmtAgo(t){const s=(Date.now()-t)/1000;if(s<60)return "방금";if(s<3600)return Math.floor(s/60)+"분 전";if(s<86400)return Math.floor(s/3600)+"시간 전";return fmtD(t);}
+function cmtListHtml(nid,eid){const list=epComments(nid,eid);
+  return list.length?list.map(c=>`<li class="cmt"><div class="cmh"><b>${esc(c.pen)}</b>${S.novels[nid]&&S.novels[nid].authorId===c.uid?`<span class="pill">작가</span>`:""}<span class="cm">${fmtAgo(c.at)}</span>${c.uid===S.uid?`<button class="btn-text" type="button" data-act="cmtdel" data-cid="${esc(c.cid)}">삭제</button>`:""}</div><p>${esc(c.t)}</p></li>`).join(""):`<li class="cmtempty">아직 댓글이 없어요. 첫 댓글을 남겨 보세요.</li>`;}
+function cmtSection(nid,eid){const n=epComments(nid,eid).length;
+  return `<section class="cmts" id="cmts"><h3>댓글 <span id="cmtCount">${n}</span></h3>
+   <form data-form="cmt" class="cmtform" novalidate><textarea id="cmtText" maxlength="500" rows="3" placeholder="${S.uid?"이 회차에 대한 댓글을 남겨 주세요 (500자까지)":"로그인하면 댓글을 쓸 수 있어요"}" aria-label="댓글 쓰기"></textarea>
+    <div class="row"><span class="cm" id="cmtLen">0 / 500</span><button class="btn" type="submit" id="cmtBtn">댓글 등록</button></div></form>
+   <ul class="cmtlist" id="cmtList">${cmtListHtml(nid,eid)}</ul></section>`;}
+function patchComments(){if(S.view.name!=="reader")return;const l=$("#cmtList"),c=$("#cmtCount");if(!l)return;l.innerHTML=cmtListHtml(S.view.id,S.view.eid);if(c)c.textContent=epComments(S.view.id,S.view.eid).length;}
+async function submitComment(){const ta=$("#cmtText");if(!ta)return;if(!needLogin())return;const t=ta.value.trim();if(!t){toast("댓글 내용을 써 주세요.");ta.focus();return;}
+  const btn=$("#cmtBtn");btn.disabled=true;
+  try{await API.addComment(S.uid,genId(),{n:S.view.id,e:S.view.eid,t:t.slice(0,500),at:Date.now()});ta.value="";const l=$("#cmtLen");if(l)l.textContent="0 / 500";toast("댓글을 남겼어요.");}
+  catch(e){toast(errMsg(e));}finally{btn.disabled=false;}}
+async function deleteComment(cid){if(!await ask("이 댓글을 삭제할까요?","삭제"))return;try{await API.delComment(S.uid,cid);toast("댓글을 삭제했어요.");}catch(e){toast(errMsg(e));}}
 
 /* ---------- views ---------- */
 function vHome(){
@@ -642,7 +682,7 @@ function vReader(){const n=findNovel(S.view.id);if(!n)return notFound();const i=
    <div class="lbl">${esc(n.title)}${ep.title?" · "+esc(ep.title):""}</div><h1>${ep.no}화</h1>${body}
    <div class="rend">${mine?`<span class="cm">내 작품 · 하트 ${fmtN(n.hearts)}개</span>`:`<span class="cm">재미있었다면 하트를 눌러 주세요. 인기 순위에 반영돼요.</span>${heartBtn(n)}`}
     <div class="pn">${prev?`<button class="btn-soft" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(prev.id)}">← ${prev.no}화</button>`:"<span></span>"}
-    ${next?`<button class="btn" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(next.id)}">${next.no}화 →</button>`:mine?`<button class="btn" type="button" data-act="newep" data-id="${esc(n.id)}">다음 회차 쓰기</button>`:`<span class="cm">마지막 회차예요</span>`}</div></div></article>`;}
+    ${next?`<button class="btn" type="button" data-act="read" data-id="${esc(n.id)}" data-eid="${esc(next.id)}">${next.no}화 →</button>`:mine?`<button class="btn" type="button" data-act="newep" data-id="${esc(n.id)}">다음 회차 쓰기</button>`:`<span class="cm">마지막 회차예요</span>`}</div></div>${cmtSection(n.id,ep.id)}</article>`;}
 
 function vWrite(){const d=S.draft||{},edit=!!d.id;
   const k=d.kind==="toon"?"toon":"novel";
@@ -691,7 +731,7 @@ function render(){renderHeader();
 function patchHearts(){const all=allNovels(),m={};all.forEach(n=>m[n.id]=n.hearts);
   document.querySelectorAll("[data-hc]").forEach(el=>el.textContent=fmtN(m[el.dataset.hc]||0));
   document.querySelectorAll("[data-hb]").forEach(el=>{const on=liked(el.dataset.hb);el.setAttribute("aria-pressed",String(on));const s=el.querySelector("[data-hl]");if(s)s.textContent=on?"하트 취소":"하트";});}
-function softRender(){if(["write","ep","reader"].includes(S.view.name)||(S.view.name==="novel"&&S.epDraft&&S.epDraft.id===S.view.id&&$("#writer"))){renderHeader();patchHearts();return;}render();}
+function softRender(){if(["write","ep","reader"].includes(S.view.name)||(S.view.name==="novel"&&S.epDraft&&S.epDraft.id===S.view.id&&$("#writer"))){renderHeader();patchHearts();patchComments();return;}render();}
 function go(v){if(!(v.name==="novel"&&S.epDraft&&S.epDraft.id===v.id))S.epDraft=null;S.view=v;window.scrollTo(0,0);render();}
 
 /* ---------- modal ---------- */
@@ -803,6 +843,7 @@ function handle(a,id,eid,t){
      const l=document.querySelectorAll(".blk");if(l.length){l[l.length-1].scrollIntoView({behavior:"smooth",block:"center"});}break;}
    case "blkdel":{const e=S.epDraft;if(!e||!e.blocks)return;captureWriter();e.blocks.splice(+t.dataset.b,1);if(!e.blocks.length)e.blocks.push({imgs:[],text:""});e.body=serBlocks(e.blocks);saveDraftNow();render();break;}
    case "blkup":case "blkdown":{const e=S.epDraft;if(!e||!e.blocks)return;captureWriter();const i=+t.dataset.b,j=i+(a==="blkup"?-1:1);if(j<0||j>=e.blocks.length)return;[e.blocks[i],e.blocks[j]]=[e.blocks[j],e.blocks[i]];e.body=serBlocks(e.blocks);saveDraftNow();render();break;}
+   case "cmtdel":deleteComment(t.dataset.cid);break;
    case "epimgup":moveEpImage(t.dataset.iid,-1);break;
    case "epimgdown":moveEpImage(t.dataset.iid,1);break;
    case "theme":setInk(document.documentElement.getAttribute("data-ink")==="dark"?"light":"dark",true);break;
@@ -837,6 +878,7 @@ document.addEventListener("click",ev=>{const t=ev.target.closest("[data-act]");i
 document.addEventListener("submit",ev=>{const f=ev.target.closest("[data-form]");if(!f)return;ev.preventDefault();const k=f.dataset.form;
   if(k==="search"){S.q=$("#q").value.trim();go(S.q?{name:"search"}:{name:"home"});}
   else if(k==="pen"){const v=$("#pen").value.trim().slice(0,16);if(!v){toast("필명을 입력해 주세요.");return;}savePen(v);}
+  else if(k==="cmt")submitComment();
   else if(k==="login"||k==="signup")doAuth(k==="signup");
   else if(k==="novel")submitNovel();else if(k==="ep")submitEp();});
 document.addEventListener("change",async ev=>{if(ev.target.name==="kind"){document.querySelectorAll(".kp").forEach(l=>l.classList.toggle("on",l.querySelector("input").checked));return;}
@@ -846,6 +888,7 @@ document.addEventListener("change",async ev=>{if(ev.target.name==="kind"){docume
   if(!/^image\/(png|jpeg|webp)$/.test(file.type)){toast("PNG, JPG, WEBP 이미지만 쓸 수 있어요.");return;}
   try{const url=await makeCover(file);const d=S.draft||(S.draft={});const kk=document.querySelector('input[name="kind"]:checked');Object.assign(d,{title:$("#title").value,genre:$("#genre").value,synopsis:$("#syn").value,kind:kk?kk.value:d.kind,preview:url});render();}
   catch(e){toast("이미지를 읽지 못했어요. 다른 파일을 골라 주세요.");}});
+document.addEventListener("input",ev=>{if(ev.target.id==="cmtText"){const l=$("#cmtLen");if(l)l.textContent=ev.target.value.length+" / 500";}});
 let autoT;
 document.addEventListener("input",ev=>{if(ev.target.classList&&ev.target.classList.contains("blktext")){captureWriter();clearTimeout(autoT);const d0=S.epDraft;autoT=setTimeout(()=>{if(S.epDraft!==d0)return;saveDraftNow();const n=$("#autosave");if(n){const d=new Date();n.textContent=`임시 저장됨 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}},600);return;}
   if(ev.target.id!=="epBody"&&ev.target.id!=="epTitle"&&ev.target.id!=="epText")return;const b=$("#epBody"),t=$("#epTitle"),x=$("#epText");
@@ -1102,6 +1145,7 @@ render();
   if(!API)API=makeLocalAPI();
   API.watchNovels(m=>{S.novels=m;S.loaded=true;S.err=false;softRender();},e=>{S.err=true;S.loaded=false;render();});
   API.watchWeek(w=>{S.week=w;softRender();});
+  S.users={};API.watchUsers(u=>{S.users=u;softRender();});
   let unMine=null;
   API.onAuth(async u=>{S.uid=u?u.uid:null;S.loginId=u?u.loginId:"";S.authReady=true;S.mine=new Set();S.pen="";if(unMine){unMine();unMine=null;}
     if(u)unMine=API.watchMine(u.uid,set=>{S.mine=set;softRender();});
